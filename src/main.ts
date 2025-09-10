@@ -17,14 +17,19 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
   const config = new DocumentBuilder()
     .setTitle('PlanTracker API')
     .setDescription('API documentation for PlanTracker')
-    .setVersion('1.0')
-    .addBearerAuth()
+    .setVersion('0.1.0')
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+    })
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

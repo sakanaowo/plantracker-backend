@@ -1,8 +1,3 @@
--- ===========================================
--- App ERD DDL (PostgreSQL)
--- Plan Tracker: Trello-like (personal & team) + Jira-min + Timer + Email + Push + Calendar
--- ===========================================
-
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS btree_gist; -- cho exclusion constraint (không overlap time)

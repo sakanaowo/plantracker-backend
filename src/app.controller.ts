@@ -7,10 +7,8 @@ export class AppController {
 
   @Get('health/db')
   async health() {
-    // eslint-disable-next-line prettier/prettier, @typescript-eslint/no-unsafe-call
-    const now = (await this.prisma.$queryRawUnsafe(`select now() as now`)) as {
-      now: Date;
-    }[];
+    const now = await this.prisma.$queryRawUnsafe(`select now() as now`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     return { ok: true, now: now?.[0]?.now ?? null };
   }
 }
