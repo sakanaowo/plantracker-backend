@@ -5,12 +5,25 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { BoardsModule } from './modules/boards/boards.module';
 import { TasksModule } from './modules/tasks/tasks.module';
-
+import { AuthModule } from './auth/auth.module';
+// TODO: remove this debug controller
 @Module({
-  imports: [PrismaModule, ProjectsModule, BoardsModule, TasksModule],
+  imports: [
+    PrismaModule,
+    ProjectsModule,
+    BoardsModule,
+    TasksModule,
+    AuthModule,
+  ],
 })
 @Module({
-  imports: [PrismaModule, ProjectsModule, BoardsModule, TasksModule],
+  imports: [
+    PrismaModule,
+    ProjectsModule,
+    BoardsModule,
+    TasksModule,
+    AuthModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
