@@ -6,7 +6,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FirebaseAuthGuard } from 'src/auth/firebase-auth.guard';
-import * as admin from 'firebase-admin';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -21,16 +20,5 @@ export class AuthDebugController {
     // Nếu verifyIdToken OK thì route này trả về uid/email
     // await admin.auth().getUser('some-uid');
     return { ok: true };
-  }
-  // TODO:remove this debug endpoint
-  @Get('ping-admin')
-  @ApiOperation({
-    summary: 'Check Firebase Admin credential by listing 1 user',
-  })
-  @ApiOkResponse({ description: 'Returns count of listed users' })
-  async pingAdmin() {
-    // Không cần token: gọi listUsers(1) để kiểm tra credential
-    const list = await admin.auth().listUsers(1);
-    return { ok: true, count: list.users.length };
   }
 }

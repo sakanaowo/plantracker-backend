@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { Request } from 'express';
+import type { UserPayload } from 'src/type/user-payload.type';
 
 @Injectable()
 export class FirebaseAuthGuard implements CanActivate {
@@ -18,11 +19,14 @@ export class FirebaseAuthGuard implements CanActivate {
     }
     try {
       const decodedToken = await admin.auth().verifyIdToken(token);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      (req as any).user = {
+      req.user = {
+        source: 'firebase',
         uid: decodedToken.uid,
-        email: decodedToken.email ?? null,
-      };
+        email: decodedToken.email ?? '',
+        name:
+          typeof decodedToken.name === 'string' ? decodedToken.name : undefined,
+        picture: decodedToken.picture ?? '',
+      } satisfies UserPayload;
       return true;
     } catch (error) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
