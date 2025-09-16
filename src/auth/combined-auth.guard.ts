@@ -7,16 +7,12 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import * as admin from 'firebase-admin';
-import { JwtService } from '@nestjs/jwt';
 import type { UserPayload } from 'src/type/user-payload.type';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
 @Injectable()
 export class CombinedAuthGuard implements CanActivate {
-  constructor(
-    private readonly jwt: JwtService,
-    private reflector: Reflector,
-  ) {}
+  constructor(private reflector: Reflector) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -44,36 +40,6 @@ export class CombinedAuthGuard implements CanActivate {
       return true;
     } catch (e) {
       console.error('Firebase auth error:', e);
-    }
-
-    try {
-      const payload = (await this.jwt.verifyAsync(token)) as unknown;
-
-      // Type guard for JWT payload
-      if (
-        !payload ||
-        typeof payload !== 'object' ||
-        !('sub' in payload) ||
-        typeof payload.sub !== 'string'
-      ) {
-        throw new UnauthorizedException('Invalid token payload');
-      }
-
-      const typedPayload = payload as {
-        sub: string;
-        email?: unknown;
-        name?: unknown;
-      };
-
-      req.user = {
-        source: 'local',
-        uid: typedPayload.sub, // sub = users.id
-        email: typeof typedPayload.email === 'string' ? typedPayload.email : '',
-        name:
-          typeof typedPayload.name === 'string' ? typedPayload.name : undefined,
-      } satisfies UserPayload;
-      return true;
-    } catch {
       throw new UnauthorizedException('Invalid token');
     }
   }

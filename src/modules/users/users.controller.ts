@@ -56,6 +56,7 @@ export class UsersController {
   @Put('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)
+  @ApiOperation({ summary: 'Update my profile' })
   updateMe(@CurrentUser() user: UserPayload, @Body() dto: updateMeDto) {
     return user.source === 'firebase'
       ? this.users.updateMeByFirebase(user.uid, dto)

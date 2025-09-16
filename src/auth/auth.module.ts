@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthDebugController } from './firebase.controller';
 import { AuthController } from './auth.controller';
@@ -9,13 +8,7 @@ import { UsersService } from 'src/modules/users/users.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
-  imports: [
-    JwtModule.register({
-      secret: process.env.JWT_SECRET!,
-      signOptions: { expiresIn: process.env.JWT_EXPIRES_IN ?? '31d' },
-    }),
-    PrismaModule,
-  ],
+  imports: [PrismaModule],
   controllers: [AuthDebugController, AuthController],
   providers: [
     FirebaseAdminProvider,
@@ -26,6 +19,6 @@ import { PrismaModule } from 'src/prisma/prisma.module';
       useClass: CombinedAuthGuard,
     },
   ],
-  exports: [CombinedAuthGuard, JwtModule],
+  exports: [CombinedAuthGuard],
 })
 export class AuthModule {}

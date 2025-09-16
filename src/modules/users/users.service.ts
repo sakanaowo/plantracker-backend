@@ -4,16 +4,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
-import { JwtService } from '@nestjs/jwt';
-// Only import admin when needed for Firebase operations
+import * as admin from 'firebase-admin';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    private prisma: PrismaService,
-    private jwt: JwtService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   // ========== Firebase ==========
   async ensureFromFirebase(opts: {
@@ -38,69 +33,139 @@ export class UsersService {
         email,
         name: name ?? email.split('@')[0],
         avatar_url: avatarUrl ?? null,
-        // password_hash đang NOT NULL -> đặt '' cho user từ Firebase
         password_hash: '',
       },
     });
   }
 
-  // ========== Local (email/password) ==========
+  // ========== email/password ==========
   async localSignup(data: { email: string; password: string; name?: string }) {
     if (!data.email || !data.password)
       throw new BadRequestException('Missing email or password');
 
-    // Check if user already exists
-    const existingUser = await this.prisma.users.findUnique({
-      where: { email: data.email },
-    });
-    if (existingUser) {
-      throw new BadRequestException('User with this email already exists');
-    }
-
-    const hash = await bcrypt.hash(data.password, 12);
     const displayName = data.name ?? data.email.split('@')[0];
-
-    // Generate a unique firebase_uid for local users to satisfy schema constraint
-    // Use a prefix to distinguish from real Firebase UIDs
-    const localFirebaseUid = `local_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-
-    const user = await this.prisma.users.create({
-      data: {
+    try {
+      const firebaseUser = await admin.auth().createUser({
         email: data.email,
-        name: displayName,
-        password_hash: hash,
-        firebase_uid: localFirebaseUid,
-      },
-    });
+        password: data.password,
+        displayName,
+      });
 
-    return { user, token: this.signLocalJwt(user) };
+      const tokens = await this.signInWithFirebase(data.email, data.password);
+      const user = await this.ensureFromFirebase({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: firebaseUser.displayName,
+        avatarUrl: firebaseUser.photoURL,
+      });
+
+      return {
+        user,
+        token: tokens.idToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object') {
+        const firebaseError = error as { code?: string; message?: string };
+        if (firebaseError.code === 'auth/email-already-exists') {
+          throw new BadRequestException('User with this email already exists');
+        }
+      }
+      throw error;
+    }
   }
 
   async localLogin(data: { email: string; password: string }) {
-    const user = await this.prisma.users.findUnique({
-      where: { email: data.email },
-    });
-    if (!user || !user.password_hash)
-      throw new UnauthorizedException('Invalid credentials');
+    if (!data.email || !data.password) {
+      throw new BadRequestException('Missing email or password');
+    }
+    try {
+      const tokens = await this.signInWithFirebase(data.email, data.password);
 
-    const ok = await bcrypt.compare(data.password, user.password_hash);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+      const decoded = await admin.auth().verifyIdToken(tokens.idToken);
+      const firebaseUser = await admin.auth().getUser(decoded.uid);
 
-    return { user, token: this.signLocalJwt(user) };
+      const user = await this.ensureFromFirebase({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email ?? decoded.email ?? data.email,
+        name:
+          firebaseUser.displayName ??
+          (typeof decoded.name === 'string' ? decoded.name : null) ??
+          data.email.split('@')[0] ??
+          null,
+        avatarUrl: firebaseUser.photoURL ?? decoded.picture ?? null,
+      });
+      return {
+        user,
+        token: tokens.idToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
+    } catch (error) {
+      const firebaseError =
+        typeof error === 'object' && error !== null
+          ? (error as { code?: string; error?: { message?: string } })
+          : undefined;
+      const code = firebaseError?.code ?? firebaseError?.error?.message ?? '';
+
+      switch (code) {
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'EMAIL_NOT_FOUND':
+        case 'INVALID_PASSWORD':
+          throw new UnauthorizedException('Invalid email or password');
+        case 'auth/too-many-requests':
+        case 'TOO_MANY_ATTEMPTS_TRY_LATER':
+          throw new UnauthorizedException(
+            'Too many failed login attempts. Please try again later.',
+          );
+        default:
+          throw error;
+      }
+    }
   }
 
-  private signLocalJwt(user: {
-    id: string;
-    email: string;
-    name: string | null;
-  }) {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-      typ: 'local',
+  private async signInWithFirebase(email: string, password: string) {
+    const apiKey = process.env.FIREBASE_WEB_API_KEY;
+    if (!apiKey) {
+      throw new Error('FIREBASE_WEB_API_KEY is not configured');
+    }
+
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          returnSecureToken: true,
+        }),
+      },
+    );
+
+    const payload = (await response.json()) as
+      | {
+          idToken?: string;
+          refreshToken?: string;
+          expiresIn?: string;
+          localId?: string;
+          error?: { message?: string };
+        }
+      | undefined;
+
+    if (!response.ok || !payload?.idToken || !payload.refreshToken) {
+      const message = payload?.error?.message ?? 'Firebase sign-in failed';
+      throw new BadRequestException(message);
+    }
+
+    return {
+      idToken: payload.idToken,
+      refreshToken: payload.refreshToken,
+      expiresIn: payload.expiresIn,
+      localId: payload.localId,
     };
-    return this.jwt.sign(payload);
   }
 
   // ========== Common ==========
