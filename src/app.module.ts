@@ -7,6 +7,7 @@ import { BoardsModule } from './modules/boards/boards.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UsersModule } from './modules/users/users.module';
     TasksModule,
     AuthModule,
     UsersModule,
+    WorkspacesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
