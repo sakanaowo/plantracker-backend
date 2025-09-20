@@ -11,7 +11,7 @@ export class updateMeDto {
   @IsString()
   @MaxLength(100)
   name?: string;
-
+  // TODO: remove email update for now
   @IsOptional()
   @IsEmail()
   email?: string;

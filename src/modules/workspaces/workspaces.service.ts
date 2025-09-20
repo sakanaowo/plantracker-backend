@@ -14,6 +14,50 @@ import { role as Role, workspace_type as WorkspaceType } from '@prisma/client';
 export class WorkspacesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1) Tìm personal workspace hiện có
+      const existing = await tx.workspaces.findFirst({
+        where: { owner_id: userId, type: 'PERSONAL' },
+      });
+      if (existing) {
+        await tx.memberships.upsert({
+          where: {
+            user_id_workspace_id: {
+              user_id: userId,
+              workspace_id: existing.id,
+            },
+          },
+          update: {},
+          create: {
+            user_id: userId,
+            workspace_id: existing.id,
+            role: 'OWNER',
+          },
+        });
+        return existing;
+      }
+
+      const ws = await tx.workspaces.create({
+        data: {
+          name: name?.trim() || 'Personal',
+          owner_id: userId,
+          type: 'PERSONAL',
+        },
+      });
+
+      await tx.memberships.create({
+        data: {
+          user_id: userId,
+          workspace_id: ws.id,
+          role: 'OWNER',
+        },
+      });
+
+      return ws;
+    });
+  }
+
   private async ensureMemberOfWorkspace(workspaceId: string, userId: string) {
     const member = await this.prisma.memberships.findUnique({
       where: {

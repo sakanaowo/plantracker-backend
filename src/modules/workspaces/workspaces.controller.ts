@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -22,6 +23,21 @@ import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 @Controller('workspaces')
 export class WorkspacesController {
   constructor(private readonly service: WorkspacesService) {}
+
+  @Post('users/:userId/personal')
+  async createPersonalForUser(
+    @CurrentUser('id') actorId: string,
+    @Param('userId') userId: string,
+    @Body() body?: Partial<CreateWorkspaceDto>,
+  ) {
+    if (actorId !== userId) {
+      throw new ForbiddenException(
+        'You can only create personal workspace for yourself',
+      );
+    }
+    const name = body?.name;
+    return this.service.ensurePersonalWorkspaceByUserId(userId, name);
+  }
 
   @Post()
   create(@CurrentUser('id') userId: string, @Body() dto: CreateWorkspaceDto) {
