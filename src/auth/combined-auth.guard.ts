@@ -9,10 +9,14 @@ import { Request } from 'express';
 import * as admin from 'firebase-admin';
 import type { UserPayload } from 'src/type/user-payload.type';
 import { IS_PUBLIC_KEY } from './public.decorator';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class CombinedAuthGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -30,9 +34,20 @@ export class CombinedAuthGuard implements CanActivate {
 
     try {
       const decoded = await admin.auth().verifyIdToken(token);
+      
+      // Find the database user to get the proper database ID
+      const dbUser = await this.prisma.users.findUnique({
+        where: { firebase_uid: decoded.uid },
+        select: { id: true }
+      });
+      
+      if (!dbUser) {
+        throw new UnauthorizedException('User not found in database');
+      }
+      
       req.user = {
         source: 'firebase',
-        uid: decoded.uid,
+        uid: dbUser.id, // Use database ID instead of Firebase UID
         email: decoded.email || '',
         name: typeof decoded.name === 'string' ? decoded.name : undefined,
         picture: decoded.picture || undefined,
