@@ -4,11 +4,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { WorkspacesService } from 'src/modules/workspaces/workspaces.service';
 import * as admin from 'firebase-admin';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly workspaces: WorkspacesService,
+  ) {}
 
   // ========== Firebase ==========
   async ensureFromFirebase(opts: {
@@ -58,6 +62,8 @@ export class UsersService {
         name: firebaseUser.displayName,
         avatarUrl: firebaseUser.photoURL,
       });
+
+      await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
 
       return {
         user,
