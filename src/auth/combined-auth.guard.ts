@@ -34,17 +34,17 @@ export class CombinedAuthGuard implements CanActivate {
 
     try {
       const decoded = await admin.auth().verifyIdToken(token);
-      
+
       // Find the database user to get the proper database ID
       const dbUser = await this.prisma.users.findUnique({
         where: { firebase_uid: decoded.uid },
-        select: { id: true }
+        select: { id: true },
       });
-      
+
       if (!dbUser) {
         throw new UnauthorizedException('User not found in database');
       }
-      
+
       req.user = {
         source: 'firebase',
         uid: dbUser.id, // Use database ID instead of Firebase UID

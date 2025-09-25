@@ -6,7 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FirebaseAuthGuard } from 'src/auth/firebase-auth.guard';
-
+// TODO: remove firebase controller
 @ApiTags('auth')
 @Controller('auth')
 export class AuthDebugController {

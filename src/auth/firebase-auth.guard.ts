@@ -12,7 +12,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 @Injectable()
 export class FirebaseAuthGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
-
+  // TODO: remove firebase auth guard
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req: Request = ctx.switchToHttp().getRequest();
     const auth = req.headers.authorization || '';
@@ -22,17 +22,17 @@ export class FirebaseAuthGuard implements CanActivate {
     }
     try {
       const decodedToken = await admin.auth().verifyIdToken(token);
-      
+
       // Find the database user to get the proper database ID
       const dbUser = await this.prisma.users.findUnique({
         where: { firebase_uid: decodedToken.uid },
-        select: { id: true }
+        select: { id: true },
       });
-      
+
       if (!dbUser) {
         throw new UnauthorizedException('User not found in database');
       }
-      
+
       req.user = {
         source: 'firebase',
         uid: dbUser.id, // Use database ID instead of Firebase UID
