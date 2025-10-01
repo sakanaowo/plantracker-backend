@@ -1,16 +1,16 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { AuthDebugController } from './firebase.controller';
 import { FirebaseAdminProvider } from './firebase-admin.provider';
 import { CombinedAuthGuard } from './combined-auth.guard';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { UsersModule } from 'src/modules/users/users.module';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [AuthDebugController],
+  imports: [PrismaModule, forwardRef(() => UsersModule)],
+  controllers: [],
   providers: [
     FirebaseAdminProvider,
-    CombinedAuthGuard, // Add as direct provider
+    CombinedAuthGuard,
     {
       provide: APP_GUARD,
       useClass: CombinedAuthGuard,
