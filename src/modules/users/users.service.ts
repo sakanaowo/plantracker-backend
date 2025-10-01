@@ -24,7 +24,7 @@ export class UsersService {
     const { uid, email, name, avatarUrl } = opts;
     if (!email) throw new BadRequestException('Firebase user has no email');
 
-    return this.prisma.users.upsert({
+    const user = await this.prisma.users.upsert({
       where: { firebase_uid: uid },
       update: {
         email,
@@ -40,6 +40,11 @@ export class UsersService {
         password_hash: '',
       },
     });
+
+    // Ensure personal workspace exists for any Firebase user sync
+    await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
+
+    return user;
   }
 
   // ========== email/password ==========
@@ -62,8 +67,6 @@ export class UsersService {
         name: firebaseUser.displayName,
         avatarUrl: firebaseUser.photoURL,
       });
-
-      await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
 
       return {
         user,
@@ -171,6 +174,27 @@ export class UsersService {
       refreshToken: payload.refreshToken,
       expiresIn: payload.expiresIn,
       localId: payload.localId,
+    };
+  }
+
+  async firebaseAuth(firebaseUid: string, idToken: string) {
+    // Get current Firebase user data
+    const firebaseUser = await admin.auth().getUser(firebaseUid);
+
+    // Ensure user exists in database (should already exist due to CombinedAuthGuard)
+    const user = await this.ensureFromFirebase({
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      name: firebaseUser.displayName,
+      avatarUrl: firebaseUser.photoURL,
+    });
+
+    // Return same format as localSignup/localLogin for consistency
+    return {
+      user,
+      token: idToken, // Client already has this token
+      authMethod: 'firebase',
+      message: 'Firebase authentication successful',
     };
   }
 

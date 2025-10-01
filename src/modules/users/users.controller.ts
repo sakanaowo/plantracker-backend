@@ -3,11 +3,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { localLoginDto } from './dto/local-login.dto';
 import { localSignupDto } from './dto/local-signup.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { CombinedAuthGuard } from 'src/auth/combined-auth.guard';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { updateMeDto } from './dto/update-me.dto';
 import type { UserPayload } from 'src/type/user-payload.type';
 import { Public } from 'src/auth/public.decorator';
+import * as admin from 'firebase-admin';
 
 @ApiTags('users')
 @Controller('users')
@@ -28,23 +30,25 @@ export class UsersController {
     return this.users.localLogin(dto);
   }
 
-  @Post('firebase/sync')
-  @ApiBearerAuth()
-  @UseGuards(CombinedAuthGuard)
-  @ApiOperation({ summary: 'Sync Firebase user' })
-  async firebaseSync(@CurrentUser() user: UserPayload) {
-    if (user.source !== 'firebase') {
-      throw new Error('Only Firebase users can sync');
+  @Post('firebase/auth')
+  @Public()
+  @ApiOperation({
+    summary: 'Complete Firebase authentication (Google Sign-In)',
+  })
+  async firebaseAuth(@Body() body: FirebaseAuthDto) {
+    if (!body.idToken) {
+      throw new Error('Firebase ID token is required');
     }
 
-    const row = await this.users.ensureFromFirebase({
-      uid: user.uid,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.picture,
-    });
+    try {
+      // Verify the token and get Firebase UID
+      const decoded = await admin.auth().verifyIdToken(body.idToken);
 
-    return { user: row };
+      // Use our new service method for consistent response
+      return await this.users.firebaseAuth(decoded.uid, body.idToken);
+    } catch {
+      throw new Error('Invalid Firebase token');
+    }
   }
 
   @Get('me')

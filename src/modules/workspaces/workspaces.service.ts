@@ -9,17 +9,26 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { role as Role, workspace_type as WorkspaceType } from '@prisma/client';
+import { ProjectsService } from '../projects/projects.service';
+import { BoardsService } from '../boards/boards.service';
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly projectsService: ProjectsService,
+    private readonly boardsService: BoardsService,
+  ) {}
 
   async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    // First, handle workspace creation/retrieval in transaction
+    const workspace = await this.prisma.$transaction(async (tx) => {
       // 1) Tìm personal workspace hiện có
       const existing = await tx.workspaces.findFirst({
         where: { owner_id: userId, type: 'PERSONAL' },
+        include: { projects: true },
       });
+
       if (existing) {
         await tx.memberships.upsert({
           where: {
@@ -38,14 +47,16 @@ export class WorkspacesService {
         return existing;
       }
 
+      // 2) Tạo workspace mới
       const ws = await tx.workspaces.create({
         data: {
-          name: name?.trim() || 'Personal',
+          name: name?.trim() || 'Default Workspace',
           owner_id: userId,
           type: 'PERSONAL',
         },
       });
 
+      // 3) Tạo membership
       await tx.memberships.create({
         data: {
           user_id: userId,
@@ -54,8 +65,43 @@ export class WorkspacesService {
         },
       });
 
-      return ws;
+      return { ...ws, projects: [] }; // Mark as new workspace with no projects
     });
+
+    // 4) Tạo default project nếu workspace chưa có project nào
+    if (workspace.projects.length === 0) {
+      await this.createDefaultProjectForWorkspace(workspace.id);
+    }
+
+    return workspace;
+  }
+
+  private async createDefaultProjectForWorkspace(workspaceId: string) {
+    // Create default project
+    const project = await this.projectsService.create({
+      name: 'My First Project',
+      workspace_id: workspaceId,
+      key: 'MFP',
+      description:
+        'Welcome to your first project! Start organizing your tasks here.',
+    });
+
+    // Create default Kanban boards
+    const defaultBoards = [
+      { name: 'To Do', order: 1 },
+      { name: 'In Progress', order: 2 },
+      { name: 'Done', order: 3 },
+    ];
+
+    for (const board of defaultBoards) {
+      await this.boardsService.create({
+        projectId: project.id,
+        name: board.name,
+        order: board.order,
+      });
+    }
+
+    return project;
   }
 
   private async ensureMemberOfWorkspace(workspaceId: string, userId: string) {
