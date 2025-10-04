@@ -41,12 +41,18 @@ export class UsersController {
     }
 
     try {
+      console.log('🔥 Firebase Admin initialized:', !!admin.apps.length);
+      console.log('📝 Verifying token...');
+      
       // Verify the token and get Firebase UID
       const decoded = await admin.auth().verifyIdToken(body.idToken);
+      
+      console.log('✅ Token verified for user:', decoded.uid);
 
       // Use our new service method for consistent response
       return await this.users.firebaseAuth(decoded.uid, body.idToken);
-    } catch {
+    } catch (error) {
+      console.error('❌ Firebase token verification failed:', error);
       throw new Error('Invalid Firebase token');
     }
   }
