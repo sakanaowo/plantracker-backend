@@ -220,6 +220,9 @@ model projects {
   workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   sprints      sprints[]
   tasks        tasks[]
+
+  @@unique([workspace_id, key])
+  @@index([workspace_id])
 }
 
 model sprints {
