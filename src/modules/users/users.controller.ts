@@ -7,7 +7,7 @@ import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { CombinedAuthGuard } from 'src/auth/combined-auth.guard';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { updateMeDto } from './dto/update-me.dto';
-import type { UserPayload } from 'src/type/user-payload.type';
+// import type { UserPayload } from 'src/type/user-payload.type';
 import { Public } from 'src/auth/public.decorator';
 import * as admin from 'firebase-admin';
 
@@ -41,18 +41,17 @@ export class UsersController {
     }
 
     try {
-      console.log('🔥 Firebase Admin initialized:', !!admin.apps.length);
-      console.log('📝 Verifying token...');
-      
+      console.log('Firebase Admin initialized:', !!admin.apps.length);
+
       // Verify the token and get Firebase UID
       const decoded = await admin.auth().verifyIdToken(body.idToken);
-      
-      console.log('✅ Token verified for user:', decoded.uid);
+
+      console.log('Token verified for user:', decoded.uid);
 
       // Use our new service method for consistent response
       return await this.users.firebaseAuth(decoded.uid, body.idToken);
     } catch (error) {
-      console.error('❌ Firebase token verification failed:', error);
+      console.error('Firebase token verification failed:', error);
       throw new Error('Invalid Firebase token');
     }
   }
@@ -60,19 +59,15 @@ export class UsersController {
   @Get('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)
-  me(@CurrentUser() user: UserPayload) {
-    return user.source === 'firebase'
-      ? this.users.getByFirebaseUid(user.uid)
-      : this.users.getById(user.uid);
+  me(@CurrentUser() userId: string) {
+    return this.users.getById(userId);
   }
 
   @Put('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)
   @ApiOperation({ summary: 'Update my profile' })
-  updateMe(@CurrentUser() user: UserPayload, @Body() dto: updateMeDto) {
-    return user.source === 'firebase'
-      ? this.users.updateMeByFirebase(user.uid, dto)
-      : this.users.updateMeById(user.uid, dto);
+  updateMe(@CurrentUser() userId: string, @Body() dto: updateMeDto) {
+    return this.users.updateMeById(userId, dto);
   }
 }

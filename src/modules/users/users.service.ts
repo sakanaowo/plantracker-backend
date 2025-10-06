@@ -123,12 +123,19 @@ export class UsersService {
         case 'auth/wrong-password':
         case 'EMAIL_NOT_FOUND':
         case 'INVALID_PASSWORD':
-          throw new UnauthorizedException('Invalid email or password');
+          throw new UnauthorizedException({
+            statusCode: 401,
+            message: 'Invalid email or password',
+            error: 'INVALID_CREDENTIALS',
+          });
         case 'auth/too-many-requests':
         case 'TOO_MANY_ATTEMPTS_TRY_LATER':
-          throw new UnauthorizedException(
-            'Too many failed login attempts. Please try again later.',
-          );
+          throw new UnauthorizedException({
+            statusCode: 429,
+            message:
+              'Too many unsuccessful login attempts. Please try again later.',
+            error: 'TOO_MANY_ATTEMPTS',
+          });
         default:
           throw error;
       }
@@ -198,39 +205,15 @@ export class UsersService {
     };
   }
 
-  // ========== Common ==========
-  getByFirebaseUid(uid: string) {
-    return this.prisma.users.findUnique({ where: { firebase_uid: uid } });
-  }
-
   getById(id: string) {
     return this.prisma.users.findUnique({ where: { id } });
   }
 
-  updateMeByFirebase(
-    uid: string,
-    data: { name?: string; email?: string; avatar_url?: string },
-  ) {
-    return this.prisma.users.update({
-      where: { firebase_uid: uid },
-      data: {
-        name: data.name ?? undefined,
-        email: data.email ?? undefined,
-        avatar_url: data.avatar_url ?? undefined,
-        updated_at: new Date(),
-      },
-    });
-  }
-
-  updateMeById(
-    id: string,
-    data: { name?: string; email?: string; avatar_url?: string },
-  ) {
+  updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
     return this.prisma.users.update({
       where: { id },
       data: {
         name: data.name ?? undefined,
-        email: data.email ?? undefined,
         avatar_url: data.avatar_url ?? undefined,
         updated_at: new Date(),
       },

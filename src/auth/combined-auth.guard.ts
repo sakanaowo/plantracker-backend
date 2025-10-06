@@ -8,7 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import * as admin from 'firebase-admin';
-import type { UserPayload } from 'src/type/user-payload.type';
+// import type { UserPayload } from 'src/type/user-payload.type';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UsersService } from 'src/modules/users/users.service';
@@ -68,13 +68,14 @@ export class CombinedAuthGuard implements CanActivate {
         this.logger.log(`Successfully auto-synced user: ${syncedUser.id}`);
       }
 
-      req.user = {
-        source: 'firebase',
-        uid: dbUser.id, // Use database ID instead of Firebase UID
-        email: decoded.email || '',
-        name: typeof decoded.name === 'string' ? decoded.name : undefined,
-        picture: decoded.picture || undefined,
-      } satisfies UserPayload;
+      // req.user = {
+      //   source: 'firebase',
+      //   uid: dbUser.id, // Use database ID instead of Firebase UID
+      //   email: decoded.email || '',
+      //   name: typeof decoded.name === 'string' ? decoded.name : undefined,
+      //   picture: decoded.picture || undefined,
+      // } satisfies UserPayload;
+      req.user = dbUser.id;
       return true;
     } catch (e) {
       this.logger.error('Firebase auth error:', e);
