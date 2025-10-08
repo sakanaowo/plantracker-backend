@@ -25,6 +25,11 @@ export class TasksController {
     return this.svc.listByBoard(boardId);
   }
 
+  @Get(':id')
+  get(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks | null> {
+    return this.svc.getById(id);
+  }
+
   @Post()
   create(@Body() dto: CreateTaskDto): Promise<tasks> {
     return this.svc.create(dto);

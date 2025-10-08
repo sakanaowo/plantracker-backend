@@ -13,6 +13,12 @@ export class TasksService {
     });
   }
 
+  getById(id: string): Promise<tasks | null> {
+    return this.prisma.tasks.findFirst({
+      where: { id },
+    });
+  }
+
   async create(dto: {
     projectId: string;
     boardId: string;
