@@ -109,7 +109,7 @@ export class WorkspacesService {
       // Create default project
       const project = await this.projectsService.create({
         name: 'My First Project',
-        workspace_id: workspaceId,
+        workspaceId: workspaceId, // ✅ Use camelCase for DTO
         key: 'MFP',
         description:
           'Welcome to your first project! Start organizing your tasks here.',
@@ -152,7 +152,7 @@ export class WorkspacesService {
         // Tạo lại project với auto-generated key
         const project = await this.projectsService.create({
           name: 'My First Project',
-          workspace_id: workspaceId,
+          workspaceId: workspaceId, // ✅ Use camelCase for DTO
           // Không truyền key → auto-generate
           description:
             'Welcome to your first project! Start organizing your tasks here.',

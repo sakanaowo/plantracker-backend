@@ -14,7 +14,7 @@ export class PrismaService
           : ['error'],
       datasources: {
         db: {
-          url: process.env.DIRECT_URL || process.env.DATABASE_URL,
+          url: process.env.DATABASE_URL || process.env.DIRECT_URL,
         },
       },
     });

@@ -8,6 +8,8 @@ import {
   Param,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
+import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 
 @Controller('projects')
 export class ProjectsController {
@@ -18,23 +20,12 @@ export class ProjectsController {
   }
 
   @Post()
-  create(
-    @Body()
-    body: {
-      name: string;
-      workspace_id: string;
-      key?: string;
-      description?: string;
-    },
-  ) {
-    return this.svc.create(body);
+  create(@Body() dto: CreateProjectDto) {
+    return this.svc.create(dto);
   }
 
   @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() body: { name?: string; key?: string; description?: string },
-  ) {
-    return this.svc.update(id, body);
+  update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
+    return this.svc.update(id, dto);
   }
 }
