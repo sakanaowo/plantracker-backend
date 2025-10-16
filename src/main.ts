@@ -44,7 +44,7 @@ async function bootstrap() {
 
   console.log(`Application is running on: http://localhost:${port}/api`);
   console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
-  console.log(`✅ All API responses transformed to camelCase`);
+  console.log(`All API responses transformed to camelCase`);
 }
 
 bootstrap().catch((error) => {
