@@ -1,6 +1,8 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { projects } from '@prisma/client'; // type do Prisma generate
+import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 
 @Injectable()
 export class ProjectsService {
@@ -79,12 +81,7 @@ export class ProjectsService {
     }
   }
 
-  async create(dto: {
-    name: string;
-    workspace_id: string;
-    key?: string;
-    description?: string;
-  }): Promise<projects> {
+  async create(dto: CreateProjectDto): Promise<projects> {
     // Generate or validate key
     let projectKey: string;
 
@@ -92,7 +89,7 @@ export class ProjectsService {
       // User provided key - check if it's unique
       const existing = await this.prisma.projects.findFirst({
         where: {
-          workspace_id: dto.workspace_id,
+          workspace_id: dto.workspaceId, // ✅ Use camelCase from DTO
           key: dto.key,
         },
       });
@@ -107,23 +104,20 @@ export class ProjectsService {
     } else {
       // Auto-generate key from name
       const baseKey = this.generateKeyFromName(dto.name);
-      projectKey = await this.ensureUniqueKey(dto.workspace_id, baseKey);
+      projectKey = await this.ensureUniqueKey(dto.workspaceId, baseKey); // ✅ Use camelCase
     }
 
     return this.prisma.projects.create({
       data: {
         name: dto.name,
-        workspace_id: dto.workspace_id,
+        workspace_id: dto.workspaceId, // ✅ Transform: camelCase → snake_case for Prisma
         key: projectKey,
         description: dto.description ?? null,
       },
     });
   }
 
-  async update(
-    id: string,
-    dto: { name?: string; key?: string; description?: string },
-  ): Promise<projects> {
+  async update(id: string, dto: UpdateProjectDto): Promise<projects> {
     // If updating key, ensure it's unique
     if (dto.key) {
       const project = await this.prisma.projects.findUnique({

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,6 +21,9 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // ✅ Transform all responses to camelCase for frontend compatibility
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   const config = new DocumentBuilder()
     .setTitle('PlanTracker API')
@@ -40,6 +44,7 @@ async function bootstrap() {
 
   console.log(`Application is running on: http://localhost:${port}/api`);
   console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
+  console.log(`All API responses transformed to camelCase`);
 }
 
 bootstrap().catch((error) => {
