@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WorkspacesService } from 'src/modules/workspaces/workspaces.service';
 import * as admin from 'firebase-admin';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -24,27 +25,113 @@ export class UsersService {
     const { uid, email, name, avatarUrl } = opts;
     if (!email) throw new BadRequestException('Firebase user has no email');
 
-    const user = await this.prisma.users.upsert({
-      where: { firebase_uid: uid },
-      update: {
-        email,
-        name: name ?? undefined,
-        avatar_url: avatarUrl ?? undefined,
-        updated_at: new Date(),
-      },
-      create: {
-        firebase_uid: uid,
-        email,
-        name: name ?? email.split('@')[0],
-        avatar_url: avatarUrl ?? null,
-        password_hash: '',
-      },
-    });
+    console.log('[ensureFromFirebase] Starting for:', { uid, email });
 
-    // Ensure personal workspace exists for any Firebase user sync
-    await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
+    try {
+      // First, try to find by firebase_uid
+      let user = await this.prisma.users.findUnique({
+        where: { firebase_uid: uid },
+      });
 
-    return user;
+      console.log('[ensureFromFirebase] Found by firebase_uid:', !!user);
+
+      console.log('[ensureFromFirebase] Found by firebase_uid:', !!user);
+
+      if (user) {
+        // User exists with this firebase_uid, just update
+        console.log('[ensureFromFirebase] Updating existing user');
+        user = await this.prisma.users.update({
+          where: { id: user.id },
+          data: {
+            email,
+            name: name ?? undefined,
+            avatar_url: avatarUrl ?? undefined,
+            updated_at: new Date(),
+          },
+        });
+      } else {
+        // Check if a user with this email already exists (from migration)
+        console.log('[ensureFromFirebase] Checking by email:', email);
+        const existingUserByEmail = await this.prisma.users.findUnique({
+          where: { email },
+        });
+
+        console.log(
+          '[ensureFromFirebase] Found by email:',
+          !!existingUserByEmail,
+        );
+
+        if (existingUserByEmail) {
+          // User exists with this email but different firebase_uid
+          // This happens after migration - update firebase_uid
+          console.log(
+            '[ensureFromFirebase] Updating firebase_uid for existing user',
+          );
+          user = await this.prisma.users.update({
+            where: { id: existingUserByEmail.id },
+            data: {
+              firebase_uid: uid,
+              name: name ?? undefined,
+              avatar_url: avatarUrl ?? undefined,
+              updated_at: new Date(),
+            },
+          });
+        } else {
+          // New user, create
+          console.log('[ensureFromFirebase] Creating new user');
+          user = await this.prisma.users.create({
+            data: {
+              firebase_uid: uid,
+              email,
+              name: name ?? email.split('@')[0],
+              avatar_url: avatarUrl ?? null,
+              password_hash: '',
+            },
+          });
+        }
+      }
+
+      // Ensure personal workspace exists for any Firebase user sync
+      await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
+
+      return user;
+    } catch (error) {
+      console.error('[ensureFromFirebase] Error occurred:', error);
+      // Handle race condition: if user was created between our check and create
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          console.log(
+            '[ensureFromFirebase] P2002 detected - race condition, retrying...',
+          );
+          // Unique constraint violation - try to find the user again
+          const user = await this.prisma.users.findUnique({
+            where: { firebase_uid: uid },
+          });
+          if (user) {
+            console.log('[ensureFromFirebase] Found user after retry by uid');
+            await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
+            return user;
+          }
+          // If still not found by firebase_uid, try by email
+          const userByEmail = await this.prisma.users.findUnique({
+            where: { email },
+          });
+          if (userByEmail) {
+            console.log('[ensureFromFirebase] Found user after retry by email');
+            // Update firebase_uid for this user
+            const updatedUser = await this.prisma.users.update({
+              where: { id: userByEmail.id },
+              data: { firebase_uid: uid },
+            });
+            await this.workspaces.ensurePersonalWorkspaceByUserId(
+              updatedUser.id,
+            );
+            return updatedUser;
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   // ========== email/password ==========
