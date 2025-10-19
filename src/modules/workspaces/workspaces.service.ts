@@ -21,10 +21,8 @@ export class WorkspacesService {
   ) {}
 
   async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
-    // First, handle workspace creation/retrieval in transaction
     const workspace = await this.prisma.$transaction(
       async (tx) => {
-        // 1) Tìm personal workspace hiện có
         const existing = await tx.workspaces.findFirst({
           where: { owner_id: userId, type: 'PERSONAL' },
           include: { projects: true },
@@ -48,7 +46,6 @@ export class WorkspacesService {
           return existing;
         }
 
-        // 2) Tạo workspace mới
         const ws = await tx.workspaces.create({
           data: {
             name: name?.trim() || 'Default Workspace',
@@ -74,8 +71,6 @@ export class WorkspacesService {
       },
     );
 
-    // 4) Tạo default project nếu workspace chưa có project nào
-    // Dùng try-catch để đảm bảo không fail toàn bộ flow nếu tạo project lỗi
     if (workspace.projects.length === 0) {
       try {
         await this.createDefaultProjectForWorkspace(workspace.id);
@@ -108,14 +103,13 @@ export class WorkspacesService {
     try {
       // Create default project
       const project = await this.projectsService.create({
-        name: 'My First Project',
-        workspaceId: workspaceId, // ✅ Use camelCase for DTO
-        key: 'MFP',
+        name: 'Default Project',
+        workspaceId: workspaceId,
+        key: 'DP',
         description:
           'Welcome to your first project! Start organizing your tasks here.',
       });
 
-      // Create default Kanban boards trong transaction để đảm bảo all-or-nothing
       await this.prisma.$transaction(async (tx) => {
         const defaultBoards = [
           { name: 'To Do', order: 1 },
@@ -136,7 +130,6 @@ export class WorkspacesService {
 
       return project;
     } catch (error: unknown) {
-      // Nếu key "MFP" đã tồn tại (do race condition), thử với key khác
       const errorMessage =
         error &&
         typeof error === 'object' &&
@@ -149,11 +142,9 @@ export class WorkspacesService {
         console.log(
           `Key conflict for workspace ${workspaceId}, trying with auto-generated key`,
         );
-        // Tạo lại project với auto-generated key
         const project = await this.projectsService.create({
-          name: 'My First Project',
-          workspaceId: workspaceId, // ✅ Use camelCase for DTO
-          // Không truyền key → auto-generate
+          name: 'Default Project',
+          workspaceId: workspaceId,
           description:
             'Welcome to your first project! Start organizing your tasks here.',
         });
