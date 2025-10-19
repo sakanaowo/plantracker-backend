@@ -12,6 +12,10 @@ export class CreateProjectDto {
   @Length(1, 120)
   name!: string;
 
+  @IsString()
+  @IsNotEmpty()
+  workspaceId!: string; // ✅ camelCase - Frontend sends this
+
   @IsOptional()
   @IsString()
   @Length(2, 10)

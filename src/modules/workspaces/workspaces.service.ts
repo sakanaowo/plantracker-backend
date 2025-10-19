@@ -22,86 +22,163 @@ export class WorkspacesService {
 
   async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
     // First, handle workspace creation/retrieval in transaction
-    const workspace = await this.prisma.$transaction(async (tx) => {
-      // 1) Tìm personal workspace hiện có
-      const existing = await tx.workspaces.findFirst({
-        where: { owner_id: userId, type: 'PERSONAL' },
-        include: { projects: true },
-      });
+    const workspace = await this.prisma.$transaction(
+      async (tx) => {
+        // 1) Tìm personal workspace hiện có
+        const existing = await tx.workspaces.findFirst({
+          where: { owner_id: userId, type: 'PERSONAL' },
+          include: { projects: true },
+        });
 
-      if (existing) {
-        await tx.memberships.upsert({
-          where: {
-            user_id_workspace_id: {
+        if (existing) {
+          await tx.memberships.upsert({
+            where: {
+              user_id_workspace_id: {
+                user_id: userId,
+                workspace_id: existing.id,
+              },
+            },
+            update: {},
+            create: {
               user_id: userId,
               workspace_id: existing.id,
+              role: 'OWNER',
             },
+          });
+          return existing;
+        }
+
+        // 2) Tạo workspace mới
+        const ws = await tx.workspaces.create({
+          data: {
+            name: name?.trim() || 'Default Workspace',
+            owner_id: userId,
+            type: 'PERSONAL',
           },
-          update: {},
-          create: {
+        });
+
+        // 3) Tạo membership
+        await tx.memberships.create({
+          data: {
             user_id: userId,
-            workspace_id: existing.id,
+            workspace_id: ws.id,
             role: 'OWNER',
           },
         });
-        return existing;
-      }
 
-      // 2) Tạo workspace mới
-      const ws = await tx.workspaces.create({
-        data: {
-          name: name?.trim() || 'Default Workspace',
-          owner_id: userId,
-          type: 'PERSONAL',
-        },
-      });
-
-      // 3) Tạo membership
-      await tx.memberships.create({
-        data: {
-          user_id: userId,
-          workspace_id: ws.id,
-          role: 'OWNER',
-        },
-      });
-
-      return { ...ws, projects: [] }; // Mark as new workspace with no projects
-    });
+        return { ...ws, projects: [] }; // Mark as new workspace with no projects
+      },
+      {
+        maxWait: 10000, // Maximum wait time to acquire a connection (10s)
+        timeout: 20000, // Maximum time the transaction can run (20s)
+      },
+    );
 
     // 4) Tạo default project nếu workspace chưa có project nào
+    // Dùng try-catch để đảm bảo không fail toàn bộ flow nếu tạo project lỗi
     if (workspace.projects.length === 0) {
-      await this.createDefaultProjectForWorkspace(workspace.id);
+      try {
+        await this.createDefaultProjectForWorkspace(workspace.id);
+      } catch (error) {
+        // Log error nhưng không throw - workspace vẫn được tạo thành công
+        console.error(
+          `Failed to create default project for workspace ${workspace.id}:`,
+          error,
+        );
+        // User có thể tự tạo project sau
+      }
     }
 
     return workspace;
   }
 
   private async createDefaultProjectForWorkspace(workspaceId: string) {
-    // Create default project
-    const project = await this.projectsService.create({
-      name: 'My First Project',
-      workspace_id: workspaceId,
-      key: 'MFP',
-      description:
-        'Welcome to your first project! Start organizing your tasks here.',
+    // Kiểm tra xem đã có project nào chưa (đề phòng race condition)
+    const existingProjects = await this.prisma.projects.count({
+      where: { workspace_id: workspaceId },
     });
 
-    // Create default Kanban boards
-    const defaultBoards = [
-      { name: 'To Do', order: 1 },
-      { name: 'In Progress', order: 2 },
-      { name: 'Done', order: 3 },
-    ];
-
-    for (const board of defaultBoards) {
-      await this.boardsService.create({
-        projectId: project.id,
-        name: board.name,
-        order: board.order,
-      });
+    if (existingProjects > 0) {
+      console.log(
+        `Workspace ${workspaceId} already has projects, skipping default project creation`,
+      );
+      return null;
     }
 
-    return project;
+    try {
+      // Create default project
+      const project = await this.projectsService.create({
+        name: 'My First Project',
+        workspaceId: workspaceId, // ✅ Use camelCase for DTO
+        key: 'MFP',
+        description:
+          'Welcome to your first project! Start organizing your tasks here.',
+      });
+
+      // Create default Kanban boards trong transaction để đảm bảo all-or-nothing
+      await this.prisma.$transaction(async (tx) => {
+        const defaultBoards = [
+          { name: 'To Do', order: 1 },
+          { name: 'In Progress', order: 2 },
+          { name: 'Done', order: 3 },
+        ];
+
+        for (const board of defaultBoards) {
+          await tx.boards.create({
+            data: {
+              project_id: project.id,
+              name: board.name,
+              order: board.order,
+            },
+          });
+        }
+      });
+
+      return project;
+    } catch (error: unknown) {
+      // Nếu key "MFP" đã tồn tại (do race condition), thử với key khác
+      const errorMessage =
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof (error as { message: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : '';
+
+      if (errorMessage.includes('already exists')) {
+        console.log(
+          `Key conflict for workspace ${workspaceId}, trying with auto-generated key`,
+        );
+        // Tạo lại project với auto-generated key
+        const project = await this.projectsService.create({
+          name: 'My First Project',
+          workspaceId: workspaceId, // ✅ Use camelCase for DTO
+          // Không truyền key → auto-generate
+          description:
+            'Welcome to your first project! Start organizing your tasks here.',
+        });
+
+        // Tạo boards cho project mới
+        const defaultBoards = [
+          { name: 'To Do', order: 1 },
+          { name: 'In Progress', order: 2 },
+          { name: 'Done', order: 3 },
+        ];
+
+        for (const board of defaultBoards) {
+          await this.boardsService.create({
+            projectId: project.id,
+            name: board.name,
+            order: board.order,
+          });
+        }
+
+        return project;
+      }
+
+      // Throw lại error khác
+      throw error;
+    }
   }
 
   private async ensureMemberOfWorkspace(workspaceId: string, userId: string) {
