@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, tasks } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -115,6 +115,107 @@ export class TasksService {
     return this.prisma.tasks.update({
       where: { id },
       data: { deleted_at: new Date() },
+    });
+  }
+
+  async createQuickTask(
+    userId: string,
+    dto: { title: string; description?: string },
+  ): Promise<tasks> {
+    const workspace = await this.prisma.workspaces.findFirst({
+      where: {
+        owner_id: userId,
+        type: 'PERSONAL',
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException(
+        'Personal workspace not found. Please create a workspace first.',
+      );
+    }
+
+    const defaultProject = await this.prisma.projects.findFirst({
+      where: {
+        workspace_id: workspace.id,
+      },
+      orderBy: {
+        created_at: 'asc',
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!defaultProject) {
+      throw new NotFoundException(
+        'No projects found in your workspace. Please create a project first.',
+      );
+    }
+
+    const todoBoard = await this.prisma.boards.findFirst({
+      where: {
+        project_id: defaultProject.id,
+        name: {
+          in: ['To Do', 'TODO', 'Todo', 'to do'],
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const targetBoard =
+      todoBoard ||
+      (await this.prisma.boards.findFirst({
+        where: {
+          project_id: defaultProject.id,
+        },
+        orderBy: {
+          order: 'asc',
+        },
+        select: {
+          id: true,
+        },
+      }));
+
+    if (!targetBoard) {
+      throw new NotFoundException(
+        `No boards found in project "${defaultProject.name}". Please create a board first.`,
+      );
+    }
+
+    const lastTask = await this.prisma.tasks.findFirst({
+      where: {
+        board_id: targetBoard.id,
+        deleted_at: null,
+      },
+      orderBy: {
+        position: 'desc',
+      },
+      select: {
+        position: true,
+      },
+    });
+
+    const nextPosition = lastTask?.position
+      ? new Prisma.Decimal(lastTask.position).plus(1024)
+      : new Prisma.Decimal(1024);
+
+    return this.prisma.tasks.create({
+      data: {
+        project_id: defaultProject.id,
+        board_id: targetBoard.id,
+        title: dto.title,
+        description: dto.description ?? null,
+        assignee_id: userId,
+        created_by: userId,
+        position: nextPosition,
+      },
     });
   }
 }

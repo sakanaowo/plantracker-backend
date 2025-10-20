@@ -10,9 +10,11 @@ import {
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { CreateQuickTaskDto } from './dto/create-quick-task.dto';
 import { MoveTaskDto } from './dto/move-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { tasks } from '@prisma/client';
+import { CurrentUser } from '../../auth/current-user.decorator';
 
 @Controller('tasks')
 export class TasksController {
@@ -33,6 +35,14 @@ export class TasksController {
   @Post()
   create(@Body() dto: CreateTaskDto): Promise<tasks> {
     return this.svc.create(dto);
+  }
+
+  @Post('quick')
+  createQuick(
+    @Body() dto: CreateQuickTaskDto,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks> {
+    return this.svc.createQuickTask(userId, dto);
   }
 
   @Post(':id/move')
