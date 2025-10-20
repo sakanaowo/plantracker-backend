@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, tasks } from '@prisma/client';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { Prisma, tasks, task_comments } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -216,6 +220,110 @@ export class TasksService {
         created_by: userId,
         position: nextPosition,
       },
+    });
+  }
+
+  // ==================== COMMENTS ====================
+
+  /**
+   * Lấy tất cả comments của một task
+   */
+  async getComments(taskId: string): Promise<task_comments[]> {
+    return this.prisma.task_comments.findMany({
+      where: { task_id: taskId },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  /**
+   * Lấy một comment cụ thể
+   */
+  async getComment(commentId: string): Promise<task_comments | null> {
+    return this.prisma.task_comments.findUnique({
+      where: { id: commentId },
+    });
+  }
+
+  /**
+   * Tạo comment mới cho task
+   * userId được lấy tự động từ authentication guard (database user ID)
+   */
+  async createComment(
+    taskId: string,
+    userId: string,
+    body: string,
+  ): Promise<task_comments> {
+    // Kiểm tra task có tồn tại không
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    return this.prisma.task_comments.create({
+      data: {
+        task_id: taskId,
+        user_id: userId,
+        body,
+      },
+    });
+  }
+
+  /**
+   * Cập nhật comment
+   * Chỉ user tạo comment mới được phép cập nhật
+   */
+  async updateComment(
+    commentId: string,
+    userId: string,
+    body: string,
+  ): Promise<task_comments> {
+    // Kiểm tra comment có tồn tại không
+    const comment = await this.prisma.task_comments.findUnique({
+      where: { id: commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID ${commentId} not found`);
+    }
+
+    // Kiểm tra user có phải là người tạo comment không
+    if (comment.user_id !== userId) {
+      throw new ForbiddenException('You can only update your own comments');
+    }
+
+    return this.prisma.task_comments.update({
+      where: { id: commentId },
+      data: { body },
+    });
+  }
+
+  /**
+   * Xóa comment
+   * Chỉ user tạo comment mới được phép xóa
+   */
+  async deleteComment(
+    commentId: string,
+    userId: string,
+  ): Promise<task_comments> {
+    // Kiểm tra comment có tồn tại không
+    const comment = await this.prisma.task_comments.findUnique({
+      where: { id: commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID ${commentId} not found`);
+    }
+
+    // Kiểm tra user có phải là người tạo comment không
+    if (comment.user_id !== userId) {
+      throw new ForbiddenException('You can only delete your own comments');
+    }
+
+    return this.prisma.task_comments.delete({
+      where: { id: commentId },
     });
   }
 }
