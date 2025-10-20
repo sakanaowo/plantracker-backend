@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+} from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
@@ -6,9 +12,14 @@ export class CreateProjectDto {
   @Length(1, 120)
   name!: string;
 
+  @IsString()
+  @IsNotEmpty()
+  workspaceId!: string; // ✅ camelCase - Frontend sends this
+
   @IsOptional()
   @IsString()
-  @Length(1, 15)
+  @Length(2, 10)
+  @Matches(/^[A-Z][A-Z0-9]*$/)
   key?: string;
 
   @IsOptional()

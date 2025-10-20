@@ -8,6 +8,8 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { TimerModule } from './modules/timers/timer.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { WorkspacesModule } from './modules/workspaces/workspaces.module';
     AuthModule,
     UsersModule,
     WorkspacesModule,
+    StorageModule,
+    TimerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

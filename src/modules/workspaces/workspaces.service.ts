@@ -9,53 +9,167 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { role as Role, workspace_type as WorkspaceType } from '@prisma/client';
+import { ProjectsService } from '../projects/projects.service';
+import { BoardsService } from '../boards/boards.service';
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly projectsService: ProjectsService,
+    private readonly boardsService: BoardsService,
+  ) {}
 
   async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
-    return this.prisma.$transaction(async (tx) => {
-      // 1) Tìm personal workspace hiện có
-      const existing = await tx.workspaces.findFirst({
-        where: { owner_id: userId, type: 'PERSONAL' },
-      });
-      if (existing) {
-        await tx.memberships.upsert({
-          where: {
-            user_id_workspace_id: {
+    const workspace = await this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.workspaces.findFirst({
+          where: { owner_id: userId, type: 'PERSONAL' },
+          include: { projects: true },
+        });
+
+        if (existing) {
+          await tx.memberships.upsert({
+            where: {
+              user_id_workspace_id: {
+                user_id: userId,
+                workspace_id: existing.id,
+              },
+            },
+            update: {},
+            create: {
               user_id: userId,
               workspace_id: existing.id,
+              role: 'OWNER',
             },
+          });
+          return existing;
+        }
+
+        const ws = await tx.workspaces.create({
+          data: {
+            name: name?.trim() || 'Default Workspace',
+            owner_id: userId,
+            type: 'PERSONAL',
           },
-          update: {},
-          create: {
+        });
+
+        // 3) Tạo membership
+        await tx.memberships.create({
+          data: {
             user_id: userId,
-            workspace_id: existing.id,
+            workspace_id: ws.id,
             role: 'OWNER',
           },
         });
-        return existing;
+
+        return { ...ws, projects: [] }; // Mark as new workspace with no projects
+      },
+      {
+        maxWait: 10000, // Maximum wait time to acquire a connection (10s)
+        timeout: 20000, // Maximum time the transaction can run (20s)
+      },
+    );
+
+    if (workspace.projects.length === 0) {
+      try {
+        await this.createDefaultProjectForWorkspace(workspace.id);
+      } catch (error) {
+        // Log error nhưng không throw - workspace vẫn được tạo thành công
+        console.error(
+          `Failed to create default project for workspace ${workspace.id}:`,
+          error,
+        );
+        // User có thể tự tạo project sau
+      }
+    }
+
+    return workspace;
+  }
+
+  private async createDefaultProjectForWorkspace(workspaceId: string) {
+    // Kiểm tra xem đã có project nào chưa (đề phòng race condition)
+    const existingProjects = await this.prisma.projects.count({
+      where: { workspace_id: workspaceId },
+    });
+
+    if (existingProjects > 0) {
+      console.log(
+        `Workspace ${workspaceId} already has projects, skipping default project creation`,
+      );
+      return null;
+    }
+
+    try {
+      // Create default project
+      const project = await this.projectsService.create({
+        name: 'Default Project',
+        workspaceId: workspaceId,
+        key: 'DP',
+        description:
+          'Welcome to your first project! Start organizing your tasks here.',
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        const defaultBoards = [
+          { name: 'To Do', order: 1 },
+          { name: 'In Progress', order: 2 },
+          { name: 'Done', order: 3 },
+        ];
+
+        for (const board of defaultBoards) {
+          await tx.boards.create({
+            data: {
+              project_id: project.id,
+              name: board.name,
+              order: board.order,
+            },
+          });
+        }
+      });
+
+      return project;
+    } catch (error: unknown) {
+      const errorMessage =
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof (error as { message: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : '';
+
+      if (errorMessage.includes('already exists')) {
+        console.log(
+          `Key conflict for workspace ${workspaceId}, trying with auto-generated key`,
+        );
+        const project = await this.projectsService.create({
+          name: 'Default Project',
+          workspaceId: workspaceId,
+          description:
+            'Welcome to your first project! Start organizing your tasks here.',
+        });
+
+        // Tạo boards cho project mới
+        const defaultBoards = [
+          { name: 'To Do', order: 1 },
+          { name: 'In Progress', order: 2 },
+          { name: 'Done', order: 3 },
+        ];
+
+        for (const board of defaultBoards) {
+          await this.boardsService.create({
+            projectId: project.id,
+            name: board.name,
+            order: board.order,
+          });
+        }
+
+        return project;
       }
 
-      const ws = await tx.workspaces.create({
-        data: {
-          name: name?.trim() || 'Personal',
-          owner_id: userId,
-          type: 'PERSONAL',
-        },
-      });
-
-      await tx.memberships.create({
-        data: {
-          user_id: userId,
-          workspace_id: ws.id,
-          role: 'OWNER',
-        },
-      });
-
-      return ws;
-    });
+      // Throw lại error khác
+      throw error;
+    }
   }
 
   private async ensureMemberOfWorkspace(workspaceId: string, userId: string) {

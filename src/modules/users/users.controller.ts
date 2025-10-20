@@ -3,11 +3,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { localLoginDto } from './dto/local-login.dto';
 import { localSignupDto } from './dto/local-signup.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { CombinedAuthGuard } from 'src/auth/combined-auth.guard';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { updateMeDto } from './dto/update-me.dto';
-import type { UserPayload } from 'src/type/user-payload.type';
+// import type { UserPayload } from 'src/type/user-payload.type';
 import { Public } from 'src/auth/public.decorator';
+import * as admin from 'firebase-admin';
 
 @ApiTags('users')
 @Controller('users')
@@ -28,41 +30,44 @@ export class UsersController {
     return this.users.localLogin(dto);
   }
 
-  @Post('firebase/sync')
-  @ApiBearerAuth()
-  @UseGuards(CombinedAuthGuard)
-  @ApiOperation({ summary: 'Sync Firebase user' })
-  async firebaseSync(@CurrentUser() user: UserPayload) {
-    if (user.source !== 'firebase') {
-      throw new Error('Only Firebase users can sync');
+  @Post('firebase/auth')
+  @Public()
+  @ApiOperation({
+    summary: 'Complete Firebase authentication (Google Sign-In)',
+  })
+  async firebaseAuth(@Body() body: FirebaseAuthDto) {
+    if (!body.idToken) {
+      throw new Error('Firebase ID token is required');
     }
 
-    const row = await this.users.ensureFromFirebase({
-      uid: user.uid,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.picture,
-    });
+    try {
+      console.log('Firebase Admin initialized:', !!admin.apps.length);
 
-    return { user: row };
+      // Verify the token and get Firebase UID
+      const decoded = await admin.auth().verifyIdToken(body.idToken);
+
+      console.log('Token verified for user:', decoded.uid);
+
+      // Use our new service method for consistent response
+      return await this.users.firebaseAuth(decoded.uid, body.idToken);
+    } catch (error) {
+      console.error('Firebase token verification failed:', error);
+      throw new Error('Invalid Firebase token');
+    }
   }
 
   @Get('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)
-  me(@CurrentUser() user: UserPayload) {
-    return user.source === 'firebase'
-      ? this.users.getByFirebaseUid(user.uid)
-      : this.users.getById(user.uid);
+  me(@CurrentUser() userId: string) {
+    return this.users.getById(userId);
   }
 
   @Put('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)
   @ApiOperation({ summary: 'Update my profile' })
-  updateMe(@CurrentUser() user: UserPayload, @Body() dto: updateMeDto) {
-    return user.source === 'firebase'
-      ? this.users.updateMeByFirebase(user.uid, dto)
-      : this.users.updateMeById(user.uid, dto);
+  updateMe(@CurrentUser() userId: string, @Body() dto: updateMeDto) {
+    return this.users.updateMeById(userId, dto);
   }
 }

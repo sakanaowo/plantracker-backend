@@ -110,3 +110,63 @@ _All workspace routes require a Bearer token._
 - **Description:** Remove a member from the workspace.
 
 > `workspace_type` and `role` enums come from the Prisma schema. Check `@prisma/client` definitions for the accepted values.
+
+## Timers
+
+_All timer routes require a Bearer token._
+
+### POST /timers/start
+
+- **Auth:** Bearer token
+- **Description:** Start a new timer for a task. If there's already a running timer for the authenticated user, it will be automatically stopped before starting the new one.
+- **Body:**
+
+  ```json
+  {
+    "taskId": "UUID of the task",
+    "startAt": "optional ISO 8601 datetime (defaults to now)",
+    "note": "optional string"
+  }
+  ```
+
+- **Response:** Returns the created `time_entries` record with `end_at: null` indicating the timer is running.
+
+### PATCH /timers/{timerId}/stop
+
+- **Auth:** Bearer token
+- **Description:** Stop a running timer. Only the owner of the timer can stop it.
+- **Params:**
+  - `timerId`: UUID of the timer to stop
+- **Body:**
+
+  ```json
+  {
+    "endAt": "optional ISO 8601 datetime (defaults to now)",
+    "note": "optional string to update the note"
+  }
+  ```
+
+- **Response:** Returns the updated `time_entries` record with `end_at` and `duration_sec` calculated.
+- **Errors:**
+  - `404`: Timer not found
+  - `403`: User doesn't own this timer
+  - `409`: Timer already stopped or end time is before start time
+
+### PATCH /timers/{timerId}/note
+
+- **Auth:** Bearer token
+- **Description:** Update the note of a time entry. Only the owner can update.
+- **Params:**
+  - `timerId`: UUID of the timer
+- **Body:**
+
+  ```json
+  {
+    "note": "string (required)"
+  }
+  ```
+
+- **Response:** Returns the updated `time_entries` record.
+- **Errors:**
+  - `404`: Timer not found
+  - `403`: User doesn't own this timer

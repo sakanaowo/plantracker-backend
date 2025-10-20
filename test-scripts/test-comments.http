@@ -1,0 +1,31 @@
+### Variables
+@baseUrl = http://localhost:3000
+@token = YOUR_FIREBASE_TOKEN_HERE
+@taskId = YOUR_TASK_ID_HERE
+@commentId = YOUR_COMMENT_ID_HERE
+
+### 1. Get all comments for a task
+GET {{baseUrl}}/tasks/{{taskId}}/comments
+Authorization: Bearer {{token}}
+
+### 2. Create a new comment
+POST {{baseUrl}}/tasks/{{taskId}}/comments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "body": "This is a test comment from the API"
+}
+
+### 3. Update a comment
+PATCH {{baseUrl}}/tasks/comments/{{commentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "body": "This is an updated comment"
+}
+
+### 4. Delete a comment
+DELETE {{baseUrl}}/tasks/comments/{{commentId}}
+Authorization: Bearer {{token}}
