@@ -326,4 +326,51 @@ export class TasksService {
       where: { id: commentId },
     });
   }
+
+  async getQuickTaskDefaults(userId: string): Promise<tasks[]> {
+    const workspace = await this.prisma.workspaces.findFirst({
+      where: {
+        owner_id: userId,
+        type: 'PERSONAL',
+      },
+    });
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found for the user.');
+    }
+
+    // Lấy project đầu tiên (mặc định)
+    const defaultProject = await this.prisma.projects.findFirst({
+      where: { workspace_id: workspace.id },
+      orderBy: { created_at: 'asc' },
+    });
+    if (!defaultProject) {
+      throw new NotFoundException('No projects found in the workspace.');
+    }
+
+    const todoBoard = await this.prisma.boards.findFirst({
+      where: {
+        project_id: defaultProject.id,
+        name: { in: ['To Do', 'TODO', 'Todo', 'to do'] },
+      },
+    });
+
+    const targetBoard =
+      todoBoard ||
+      (await this.prisma.boards.findFirst({
+        where: { project_id: defaultProject.id },
+        orderBy: { order: 'asc' },
+      }));
+
+    if (!targetBoard) {
+      throw new NotFoundException('No boards found');
+    }
+
+    return this.prisma.tasks.findMany({
+      where: {
+        board_id: targetBoard.id,
+        deleted_at: null,
+      },
+      orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
+    });
+  }
 }

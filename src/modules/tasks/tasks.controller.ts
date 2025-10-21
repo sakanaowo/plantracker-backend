@@ -29,6 +29,11 @@ export class TasksController {
     return this.svc.listByBoard(boardId);
   }
 
+  @Get('quick/defaults')
+  getQuickTaskDefaults(@CurrentUser('id') userId: string): Promise<tasks[]> {
+    return this.svc.getQuickTaskDefaults(userId);
+  }
+
   @Get(':id')
   get(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks | null> {
     return this.svc.getById(id);
