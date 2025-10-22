@@ -51,7 +51,7 @@ export class TasksService {
 
   update(
     id: string,
-    dto: { title?: string; description?: string; assigneeId?: string },
+    dto: { title?: string; description?: string; assigneeId?: string; position?: number },
   ): Promise<tasks> {
     return this.prisma.tasks.update({
       where: { id },
@@ -59,6 +59,7 @@ export class TasksService {
         title: dto.title,
         description: dto.description,
         assignee_id: dto.assigneeId,
+        position: dto.position,
       },
     });
   }
