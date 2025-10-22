@@ -9,7 +9,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   app.enableCors({
-    origin: ['http://localhost:3000', 'https://your-frontend-domain.com'],
+    origin: ['http://localhost:3000'],
     credentials: true,
   });
 
@@ -22,7 +22,7 @@ async function bootstrap() {
     }),
   );
 
-  // ✅ Transform all responses to camelCase for frontend compatibility
+  // Transform all responses to camelCase for frontend compatibility
   app.useGlobalInterceptors(new TransformInterceptor());
 
   const config = new DocumentBuilder()
@@ -44,7 +44,6 @@ async function bootstrap() {
 
   console.log(`Application is running on: http://localhost:${port}/api`);
   console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
-  console.log(`All API responses transformed to camelCase`);
 }
 
 bootstrap().catch((error) => {
