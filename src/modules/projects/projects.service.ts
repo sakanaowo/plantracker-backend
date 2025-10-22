@@ -107,14 +107,37 @@ export class ProjectsService {
       projectKey = await this.ensureUniqueKey(dto.workspaceId, baseKey); // ✅ Use camelCase
     }
 
-    return this.prisma.projects.create({
-      data: {
-        name: dto.name,
-        workspace_id: dto.workspaceId, // ✅ Transform: camelCase → snake_case for Prisma
-        key: projectKey,
-        description: dto.description ?? null,
-      },
+    // Create project with default boards in a transaction
+    const project = await this.prisma.$transaction(async (tx) => {
+      // 1. Create project
+      const newProject = await tx.projects.create({
+        data: {
+          name: dto.name,
+          workspace_id: dto.workspaceId, // ✅ Transform: camelCase → snake_case for Prisma
+          key: projectKey,
+          description: dto.description ?? null,
+        },
+      });
+
+      // 2. Create default boards (To Do, In Progress, Done)
+      const defaultBoards = [
+        { name: 'To Do', order: 0 },
+        { name: 'In Progress', order: 1 },
+        { name: 'Done', order: 2 },
+      ];
+
+      await tx.boards.createMany({
+        data: defaultBoards.map((board) => ({
+          project_id: newProject.id,
+          name: board.name,
+          order: board.order,
+        })),
+      });
+
+      return newProject;
     });
+
+    return project;
   }
 
   async update(id: string, dto: UpdateProjectDto): Promise<projects> {
