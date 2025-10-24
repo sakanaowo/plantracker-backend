@@ -92,6 +92,7 @@ export class ProjectsService {
           workspace_id: dto.workspaceId,
           key: projectKey,
           description: dto.description ?? null,
+          type: dto.type ?? 'PERSONAL', // Default to PERSONAL if not specified
         },
       });
 
@@ -147,6 +148,7 @@ export class ProjectsService {
         name: dto.name,
         key: dto.key,
         description: dto.description,
+        type: dto.type, // Allow changing project type
       },
     });
   }

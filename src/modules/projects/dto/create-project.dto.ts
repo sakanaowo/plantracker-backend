@@ -1,10 +1,12 @@
 import {
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   Matches,
 } from 'class-validator';
+import { project_type } from '@prisma/client';
 
 export class CreateProjectDto {
   @IsString()
@@ -25,4 +27,8 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsEnum(project_type)
+  type?: project_type; // PERSONAL or TEAM - defaults to PERSONAL
 }

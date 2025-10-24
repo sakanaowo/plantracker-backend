@@ -208,7 +208,6 @@ export class TasksService {
     const workspace = await this.prisma.workspaces.findFirst({
       where: {
         owner_id: userId,
-        type: 'PERSONAL',
       },
       select: {
         id: true,
@@ -410,7 +409,6 @@ export class TasksService {
     const workspace = await this.prisma.workspaces.findFirst({
       where: {
         owner_id: userId,
-        type: 'PERSONAL',
       },
     });
     if (!workspace) {
