@@ -12,13 +12,83 @@ export class NotificationsService {
   ) {}
 
   /**
-   * Gửi task reminder notification
+   * Gửi notification khi task được assign cho user
    */
+  async sendTaskAssigned(data: {
+    taskId: string;
+    taskTitle: string;
+    projectName: string;
+    assigneeId: string;
+    assignedBy: string;
+    assignedByName: string;
+  }): Promise<void> {
+    try {
+      const assigneeDevice = await this.prisma.user_devices.findFirst({
+        where: {
+          user_id: data.assigneeId,
+          is_active: true,
+        },
+        orderBy: {
+          last_active_at: 'desc',
+        },
+      });
+
+      if (!assigneeDevice?.fcm_token) {
+        this.logger.warn(
+          `Task assigned notification skipped: user ${data.assigneeId} has no active FCM token`,
+        );
+        return;
+      }
+
+      const message = `${data.assignedByName} đã giao task cho bạn trong project "${data.projectName}"`;
+
+      await this.fcmService.sendNotification({
+        token: assigneeDevice.fcm_token,
+        notification: {
+          title: '📋 Task Mới',
+          body: message,
+        },
+        data: {
+          type: 'task_assigned',
+          taskId: data.taskId,
+          taskTitle: data.taskTitle,
+          projectName: data.projectName,
+          assignedBy: data.assignedBy,
+          assignedByName: data.assignedByName,
+          clickAction: 'OPEN_TASK_DETAIL',
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'task_updates',
+            priority: 'high',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            tag: `task_${data.taskId}`,
+          },
+        },
+      });
+
+      await this.logNotification({
+        userId: data.assigneeId,
+        type: 'TASK_ASSIGNED',
+        taskId: data.taskId,
+        message,
+      });
+
+      this.logger.log(
+        `Task assigned notification sent to user ${data.assigneeId}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send task assigned notification:', error);
+    }
+  }
+
   async sendTaskReminder(data: {
-    userId: string; // UUID string
+    userId: string;
     fcmToken: string;
     task: {
-      id: string; // UUID string
+      id: string;
       title: string;
       dueDate: Date | null;
       projectName: string;
@@ -66,9 +136,6 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Gửi daily summary notification
-   */
   async sendDailySummary(data: {
     userId: string; // UUID string
     fcmToken: string;
@@ -117,9 +184,6 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Build summary message
-   */
   private buildSummaryMessage(summary: {
     totalTasks: number;
     upcomingTasks: number;
@@ -140,9 +204,6 @@ export class NotificationsService {
     return parts.join(', ') + '.';
   }
 
-  /**
-   * Log notification to database
-   */
   private async logNotification(data: {
     userId: string;
     type: string;
@@ -152,6 +213,11 @@ export class NotificationsService {
     try {
       // Map notification type to enum
       const notificationType = this.mapNotificationType(data.type);
+      const priority =
+        notificationType === 'TIME_REMINDER' ||
+        notificationType === 'TASK_ASSIGNED'
+          ? 'HIGH'
+          : 'NORMAL';
 
       await this.prisma.notifications.create({
         data: {
@@ -160,7 +226,7 @@ export class NotificationsService {
           title: this.getNotificationTitle(data.type),
           body: data.message,
           channel: 'PUSH',
-          priority: data.type === 'TIME_REMINDER' ? 'HIGH' : 'NORMAL',
+          priority: priority as any,
           status: 'SENT',
           sent_at: new Date(),
           data: data.taskId ? { taskId: data.taskId } : undefined,
@@ -168,19 +234,17 @@ export class NotificationsService {
       });
     } catch (error) {
       this.logger.error('Failed to log notification:', error);
-      // Don't throw - logging failure shouldn't break notification sending
     }
   }
 
-  /**
-   * Map notification type string to enum
-   */
   private mapNotificationType(type: string): string {
     const typeMap: Record<string, string> = {
       task_reminder: 'TIME_REMINDER',
       TIME_REMINDER: 'TIME_REMINDER',
       daily_summary: 'SYSTEM',
       SYSTEM: 'SYSTEM',
+      task_assigned: 'TASK_ASSIGNED',
+      TASK_ASSIGNED: 'TASK_ASSIGNED',
     };
     return typeMap[type] || 'SYSTEM';
   }
@@ -194,6 +258,8 @@ export class NotificationsService {
       TIME_REMINDER: 'Nhắc nhở Task',
       daily_summary: 'Tổng kết ngày',
       SYSTEM: 'Thông báo hệ thống',
+      task_assigned: 'Task mới được giao',
+      TASK_ASSIGNED: 'Task mới được giao',
     };
     return titleMap[type] || 'Thông báo';
   }

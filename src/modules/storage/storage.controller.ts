@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { StorageService } from './storage.service';
 import { ApiTags } from '@nestjs/swagger';
-// import { CombinedAuthGuard } from 'src/auth/combined-auth.guard';
 import { RequestUploadDto } from './dto/request-upload.dto';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 

@@ -40,8 +40,14 @@ export class TasksController {
   }
 
   @Post()
-  create(@Body() dto: CreateTaskDto): Promise<tasks> {
-    return this.svc.create(dto);
+  create(
+    @Body() dto: CreateTaskDto,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks> {
+    return this.svc.create({
+      ...dto,
+      createdBy: userId,
+    });
   }
 
   @Post('quick')
@@ -64,8 +70,12 @@ export class TasksController {
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateTaskDto,
+    @CurrentUser('id') userId: string,
   ): Promise<tasks> {
-    return this.svc.update(id, dto);
+    return this.svc.update(id, {
+      ...dto,
+      updatedBy: userId,
+    });
   }
 
   @Delete(':id')
