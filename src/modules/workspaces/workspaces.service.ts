@@ -8,23 +8,21 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
-import { role as Role, workspace_type as WorkspaceType } from '@prisma/client';
+import { role as Role } from '@prisma/client';
 import { ProjectsService } from '../projects/projects.service';
-import { BoardsService } from '../boards/boards.service';
 
 @Injectable()
 export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectsService: ProjectsService,
-    private readonly boardsService: BoardsService,
   ) {}
 
   async ensurePersonalWorkspaceByUserId(userId: string, name?: string) {
     const workspace = await this.prisma.$transaction(
       async (tx) => {
         const existing = await tx.workspaces.findFirst({
-          where: { owner_id: userId, type: 'PERSONAL' },
+          where: { owner_id: userId },
           include: { projects: true },
         });
 
@@ -48,9 +46,8 @@ export class WorkspacesService {
 
         const ws = await tx.workspaces.create({
           data: {
-            name: name?.trim() || 'Default Workspace',
+            name: name?.trim() + "'s Workspace",
             owner_id: userId,
-            type: 'PERSONAL',
           },
         });
 
@@ -101,31 +98,13 @@ export class WorkspacesService {
     }
 
     try {
-      // Create default project
+      // Create default project (boards are automatically created by projectsService.create)
       const project = await this.projectsService.create({
         name: 'Default Project',
         workspaceId: workspaceId,
         key: 'DP',
         description:
           'Welcome to your first project! Start organizing your tasks here.',
-      });
-
-      await this.prisma.$transaction(async (tx) => {
-        const defaultBoards = [
-          { name: 'To Do', order: 1 },
-          { name: 'In Progress', order: 2 },
-          { name: 'Done', order: 3 },
-        ];
-
-        for (const board of defaultBoards) {
-          await tx.boards.create({
-            data: {
-              project_id: project.id,
-              name: board.name,
-              order: board.order,
-            },
-          });
-        }
       });
 
       return project;
@@ -142,27 +121,14 @@ export class WorkspacesService {
         console.log(
           `Key conflict for workspace ${workspaceId}, trying with auto-generated key`,
         );
+        // Create project without specifying key (auto-generate)
+        // Boards are automatically created by projectsService.create
         const project = await this.projectsService.create({
           name: 'Default Project',
           workspaceId: workspaceId,
           description:
             'Welcome to your first project! Start organizing your tasks here.',
         });
-
-        // Tạo boards cho project mới
-        const defaultBoards = [
-          { name: 'To Do', order: 1 },
-          { name: 'In Progress', order: 2 },
-          { name: 'Done', order: 3 },
-        ];
-
-        for (const board of defaultBoards) {
-          await this.boardsService.create({
-            projectId: project.id,
-            name: board.name,
-            order: board.order,
-          });
-        }
 
         return project;
       }
@@ -194,15 +160,13 @@ export class WorkspacesService {
       throw new ForbiddenException('User is not the owner of the workspace');
     }
   }
-  // create team workspace || create personal workspace
+  // create workspace (no longer needs type parameter)
   async createWorkspace(ownerId: string, dto: CreateWorkspaceDto) {
-    const type: WorkspaceType = dto.type ?? 'TEAM';
     return this.prisma.$transaction(async (tx) => {
       const ws = await tx.workspaces.create({
         data: {
           name: dto.name,
           owner_id: ownerId,
-          type,
         },
       });
 
@@ -269,7 +233,6 @@ export class WorkspacesService {
       where: { id: workspaceId },
       data: {
         name: dto.name,
-        type: dto.type,
       },
     });
   }

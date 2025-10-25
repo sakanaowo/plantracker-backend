@@ -15,15 +15,11 @@ export class ProjectsService {
     });
   }
 
-  /**
-   * Generate a project key from the project name
-   * Takes first letters of each word, uppercase, max 10 chars
-   */
   private generateKeyFromName(name: string): string {
     const words = name
       .trim()
       .toUpperCase()
-      .replace(/[^A-Z0-9\s]/g, '') // Remove special characters
+      .replace(/[^A-Z0-9\s]/g, '')
       .split(/\s+/)
       .filter((w) => w.length > 0);
 
@@ -31,22 +27,15 @@ export class ProjectsService {
       return 'PROJ';
     }
 
-    // Take first letter of each word
     let key = words.map((w) => w[0]).join('');
 
-    // If too short, take first word
     if (key.length < 2 && words[0]) {
       key = words[0].substring(0, 5);
     }
 
-    // Limit to 10 characters
     return key.substring(0, 10);
   }
 
-  /**
-   * Ensure the key is unique within the workspace
-   * If collision, append number (e.g., PROJ, PROJ2, PROJ3)
-   */
   private async ensureUniqueKey(
     workspaceId: string,
     baseKey: string,
@@ -66,30 +55,20 @@ export class ProjectsService {
         return key;
       }
 
-      // Append counter, ensure total length <= 10
       const suffix = counter.toString();
       const maxBaseLength = 10 - suffix.length;
       key = baseKey.substring(0, maxBaseLength) + suffix;
       counter++;
-
-      // Safety check to prevent infinite loop
-      if (counter > 999) {
-        throw new ConflictException(
-          'Unable to generate unique project key. Please provide a custom key.',
-        );
-      }
     }
   }
 
   async create(dto: CreateProjectDto): Promise<projects> {
-    // Generate or validate key
     let projectKey: string;
 
     if (dto.key) {
-      // User provided key - check if it's unique
       const existing = await this.prisma.projects.findFirst({
         where: {
-          workspace_id: dto.workspaceId, // ✅ Use camelCase from DTO
+          workspace_id: dto.workspaceId,
           key: dto.key,
         },
       });
@@ -102,24 +81,21 @@ export class ProjectsService {
 
       projectKey = dto.key;
     } else {
-      // Auto-generate key from name
       const baseKey = this.generateKeyFromName(dto.name);
-      projectKey = await this.ensureUniqueKey(dto.workspaceId, baseKey); // ✅ Use camelCase
+      projectKey = await this.ensureUniqueKey(dto.workspaceId, baseKey);
     }
 
-    // Create project with default boards in a transaction
     const project = await this.prisma.$transaction(async (tx) => {
-      // 1. Create project
       const newProject = await tx.projects.create({
         data: {
           name: dto.name,
-          workspace_id: dto.workspaceId, // ✅ Transform: camelCase → snake_case for Prisma
+          workspace_id: dto.workspaceId,
           key: projectKey,
           description: dto.description ?? null,
+          type: dto.type ?? 'PERSONAL', // Default to PERSONAL if not specified
         },
       });
 
-      // 2. Create default boards (To Do, In Progress, Done)
       const defaultBoards = [
         { name: 'To Do', order: 0 },
         { name: 'In Progress', order: 1 },
@@ -141,7 +117,6 @@ export class ProjectsService {
   }
 
   async update(id: string, dto: UpdateProjectDto): Promise<projects> {
-    // If updating key, ensure it's unique
     if (dto.key) {
       const project = await this.prisma.projects.findUnique({
         where: { id },
@@ -156,7 +131,7 @@ export class ProjectsService {
         where: {
           workspace_id: project.workspace_id,
           key: dto.key,
-          id: { not: id }, // Exclude current project
+          id: { not: id },
         },
       });
 
@@ -173,6 +148,7 @@ export class ProjectsService {
         name: dto.name,
         key: dto.key,
         description: dto.description,
+        type: dto.type, // Allow changing project type
       },
     });
   }

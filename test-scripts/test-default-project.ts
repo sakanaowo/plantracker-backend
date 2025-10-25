@@ -18,7 +18,6 @@ async function testDefaultProjectCreation() {
     console.log('Test 1: Finding workspaces without projects...');
     const emptyWorkspaces = await prisma.workspaces.findMany({
       where: {
-        type: 'PERSONAL',
         projects: {
           none: {},
         },
@@ -129,7 +128,6 @@ async function testDefaultProjectCreation() {
         workspaces: {
           select: {
             name: true,
-            type: true,
           },
         },
       },
@@ -168,10 +166,7 @@ async function testDefaultProjectCreation() {
 
     // Test 5: Check memberships
     console.log('\nTest 5: Verifying memberships...');
-    const personalWorkspaces = await prisma.workspaces.findMany({
-      where: {
-        type: 'PERSONAL',
-      },
+    const allWorkspaces = await prisma.workspaces.findMany({
       include: {
         memberships: {
           where: {
@@ -181,7 +176,7 @@ async function testDefaultProjectCreation() {
       },
     });
 
-    const workspacesWithoutOwner = personalWorkspaces.filter(
+    const workspacesWithoutOwner = allWorkspaces.filter(
       (ws) => ws.memberships.length === 0,
     );
 
@@ -193,7 +188,7 @@ async function testDefaultProjectCreation() {
         console.log(`     - ${ws.name} (${ws.id})`);
       });
     } else {
-      console.log('  ✅ All personal workspaces have an OWNER');
+      console.log('  ✅ All workspaces have an OWNER');
     }
 
     // Summary
@@ -217,4 +212,4 @@ async function testDefaultProjectCreation() {
 }
 
 // Run the test
-testDefaultProjectCreation();
+void testDefaultProjectCreation();

@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { Prisma, tasks, task_comments } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   listByBoard(boardId: string): Promise<tasks[]> {
     return this.prisma.tasks.findMany({
@@ -28,6 +32,7 @@ export class TasksService {
     boardId: string;
     title: string;
     assigneeId?: string;
+    createdBy?: string;
   }): Promise<tasks> {
     const last = await this.prisma.tasks.findFirst({
       where: { board_id: dto.boardId, deleted_at: null },
@@ -38,29 +43,103 @@ export class TasksService {
       ? new Prisma.Decimal(last.position).plus(1024)
       : new Prisma.Decimal(1024);
 
-    return this.prisma.tasks.create({
+    const task = await this.prisma.tasks.create({
       data: {
         project_id: dto.projectId,
         board_id: dto.boardId,
         title: dto.title,
         assignee_id: dto.assigneeId ?? null,
+        created_by: dto.createdBy ?? null,
         position: nextPos,
       },
     });
+
+    if (dto.assigneeId && dto.assigneeId !== dto.createdBy) {
+      const project = await this.prisma.projects.findUnique({
+        where: { id: dto.projectId },
+        select: { name: true },
+      });
+      let assignedByName = 'Hệ thống';
+
+      if (dto.createdBy) {
+        const assigner = await this.prisma.users.findUnique({
+          where: { id: dto.createdBy },
+          select: { name: true },
+        });
+        assignedByName = assigner?.name ?? assignedByName;
+      }
+
+      await this.notificationsService.sendTaskAssigned({
+        taskId: task.id,
+        taskTitle: task.title,
+        projectName: project?.name ?? 'Project',
+        assigneeId: dto.assigneeId,
+        assignedBy: dto.createdBy ?? 'system',
+        assignedByName,
+      });
+    }
+
+    return task;
   }
 
-  update(
+  async update(
     id: string,
-    dto: { title?: string; description?: string; assigneeId?: string },
+    dto: {
+      title?: string;
+      description?: string;
+      assigneeId?: string;
+      position?: number;
+      updatedBy?: string;
+    },
   ): Promise<tasks> {
-    return this.prisma.tasks.update({
+    const currentTask = await this.prisma.tasks.findUnique({
+      where: { id },
+      include: {
+        projects: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!currentTask) {
+      throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    const updatedTask = await this.prisma.tasks.update({
       where: { id },
       data: {
         title: dto.title,
         description: dto.description,
         assignee_id: dto.assigneeId,
+        position: dto.position,
       },
     });
+
+    if (
+      dto.assigneeId &&
+      dto.assigneeId !== currentTask.assignee_id &&
+      dto.assigneeId !== dto.updatedBy
+    ) {
+      const assigner = dto.updatedBy
+        ? await this.prisma.users.findUnique({
+            where: { id: dto.updatedBy },
+            select: { name: true },
+          })
+        : null;
+
+      await this.notificationsService.sendTaskAssigned({
+        taskId: updatedTask.id,
+        taskTitle: updatedTask.title,
+        projectName: currentTask.projects?.name ?? 'Project',
+        assigneeId: dto.assigneeId,
+        assignedBy: dto.updatedBy ?? 'system',
+        assignedByName: assigner?.name ?? 'Hệ thống',
+      });
+    }
+
+    return updatedTask;
   }
 
   // move + reorder: chuyển board và chèn giữa before/after
@@ -129,7 +208,6 @@ export class TasksService {
     const workspace = await this.prisma.workspaces.findFirst({
       where: {
         owner_id: userId,
-        type: 'PERSONAL',
       },
       select: {
         id: true,
@@ -331,7 +409,6 @@ export class TasksService {
     const workspace = await this.prisma.workspaces.findFirst({
       where: {
         owner_id: userId,
-        type: 'PERSONAL',
       },
     });
     if (!workspace) {

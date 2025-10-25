@@ -92,7 +92,7 @@ export class UsersService {
       }
 
       // Ensure personal workspace exists for any Firebase user sync
-      await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
+      await this.workspaces.ensurePersonalWorkspaceByUserId(user.id, user.name);
 
       return user;
     } catch (error) {
