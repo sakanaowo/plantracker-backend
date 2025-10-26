@@ -19,7 +19,7 @@ Tạo environment mới trong Postman với các biến:
 {
   "baseUrl": "http://localhost:3000/api",
   "authToken": "your-jwt-token-here",
-  "workspaceId": "workspace-uuid",
+  "projectId": "workspace-uuid",
   "projectId": "project-uuid",
   "taskId": "task-uuid",
   "userId": "user-uuid",
@@ -85,7 +85,7 @@ Response:
 
 **Endpoint:**
 ```http
-POST {{baseUrl}}/workspaces/{{workspaceId}}/labels
+POST {{baseUrl}}/projects/{{projectId}}/labels
 Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
@@ -107,7 +107,7 @@ Content-Type: application/json
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "workspace_id": "{{workspaceId}}",
+  "workspace_id": "{{projectId}}",
   "name": "Bug",
   "color": "red",
   "description": "Bug fixes and issues",
@@ -145,7 +145,7 @@ pm.test("Label created successfully", function () {
 
 **Endpoint:**
 ```http
-GET {{baseUrl}}/workspaces/{{workspaceId}}/labels
+GET {{baseUrl}}/projects/{{projectId}}/labels
 Authorization: Bearer {{authToken}}
 ```
 
@@ -154,7 +154,7 @@ Authorization: Bearer {{authToken}}
 [
   {
     "id": "uuid-1",
-    "workspace_id": "{{workspaceId}}",
+    "workspace_id": "{{projectId}}",
     "name": "Bug",
     "color": "red",
     "description": "Bug fixes",
@@ -163,7 +163,7 @@ Authorization: Bearer {{authToken}}
   },
   {
     "id": "uuid-2",
-    "workspace_id": "{{workspaceId}}",
+    "workspace_id": "{{projectId}}",
     "name": "Feature",
     "color": "blue",
     "description": "New features",
@@ -211,7 +211,7 @@ Content-Type: application/json
 ```json
 {
   "id": "{{labelId}}",
-  "workspace_id": "{{workspaceId}}",
+  "workspace_id": "{{projectId}}",
   "name": "Critical Bug",
   "color": "red",
   "description": "Critical bugs that need immediate attention",
@@ -337,7 +337,7 @@ Authorization: Bearer {{authToken}}
 [
   {
     "id": "uuid-1",
-    "workspace_id": "{{workspaceId}}",
+    "workspace_id": "{{projectId}}",
     "name": "Bug",
     "color": "red",
     "description": "Bug fixes",
@@ -1000,7 +1000,7 @@ Content-Type: application/json
 ```json
 {
   "id": "{{projectId}}",
-  "workspace_id": "{{workspaceId}}",
+  "workspace_id": "{{projectId}}",
   "name": "Project Name",
   "type": "TEAM",
   "created_by": "user-uuid",
@@ -1127,7 +1127,7 @@ if (pm.response.code >= 400) {
 
 ```javascript
 // 1. Create label
-POST /workspaces/{{workspaceId}}/labels
+POST /workspaces/{{projectId}}/labels
 { "name": "E2E Test", "color": "blue" }
 // Save labelId
 

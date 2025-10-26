@@ -24,26 +24,26 @@ export class LabelsController {
   constructor(private readonly labelsService: LabelsService) {}
 
   /**
-   * Create label in workspace
+   * Create label in project
    */
-  @Post('workspaces/:workspaceId/labels')
+  @Post('projects/:projectId/labels')
   async create(
-    @Param('workspaceId') workspaceId: string,
+    @Param('projectId') projectId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateLabelDto,
   ) {
-    return this.labelsService.create(workspaceId, userId, dto);
+    return this.labelsService.create(projectId, userId, dto);
   }
 
   /**
-   * List all labels in workspace
+   * List all labels in project
    */
-  @Get('workspaces/:workspaceId/labels')
-  async listByWorkspace(
-    @Param('workspaceId') workspaceId: string,
+  @Get('projects/:projectId/labels')
+  async listByProject(
+    @Param('projectId') projectId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.labelsService.listByWorkspace(workspaceId, userId);
+    return this.labelsService.listByProject(projectId, userId);
   }
 
   /**

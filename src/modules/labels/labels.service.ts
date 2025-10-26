@@ -19,11 +19,11 @@ export class LabelsService {
   ) {}
 
   /**
-   * Create a new label in workspace
+   * Create a new label in project
    */
-  async create(workspaceId: string, userId: string, dto: CreateLabelDto) {
-    // Validate workspace access
-    await this.validateWorkspaceAccess(workspaceId, userId);
+  async create(projectId: string, userId: string, dto: CreateLabelDto) {
+    // Validate project access
+    await this.validateProjectAccess(projectId, userId);
 
     // Validate color is in predefined palette
     if (!isValidLabelColor(dto.color)) {
@@ -32,10 +32,10 @@ export class LabelsService {
       );
     }
 
-    // Check for duplicate name in workspace
+    // Check for duplicate name in project
     const existing = await this.prisma.labels.findFirst({
       where: {
-        workspace_id: workspaceId,
+        project_id: projectId,
         name: dto.name,
       },
     });
@@ -47,7 +47,7 @@ export class LabelsService {
     // Create label
     const label = await this.prisma.labels.create({
       data: {
-        workspace_id: workspaceId,
+        project_id: projectId,
         name: dto.name,
         color: dto.color,
       },
@@ -57,14 +57,14 @@ export class LabelsService {
   }
 
   /**
-   * List all labels in workspace with task count
+   * List all labels in project with task count
    */
-  async listByWorkspace(workspaceId: string, userId: string) {
-    // Validate workspace access
-    await this.validateWorkspaceAccess(workspaceId, userId);
+  async listByProject(projectId: string, userId: string) {
+    // Validate project access
+    await this.validateProjectAccess(projectId, userId);
 
     const labels = await this.prisma.labels.findMany({
-      where: { workspace_id: workspaceId },
+      where: { project_id: projectId },
       include: {
         task_labels: {
           select: { task_id: true },
@@ -76,7 +76,7 @@ export class LabelsService {
     // Map with task count
     return labels.map((label) => ({
       id: label.id,
-      workspaceId: label.workspace_id,
+      projectId: label.project_id,
       name: label.name,
       color: label.color,
       taskCount: label.task_labels.length,
@@ -97,8 +97,8 @@ export class LabelsService {
       throw new NotFoundException('Label not found');
     }
 
-    // Validate workspace access
-    await this.validateWorkspaceAccess(label.workspace_id, userId);
+    // Validate project access
+    await this.validateProjectAccess(label.project_id, userId);
 
     // Validate color if provided
     if (dto.color && !isValidLabelColor(dto.color)) {
@@ -111,7 +111,7 @@ export class LabelsService {
     if (dto.name && dto.name !== label.name) {
       const existing = await this.prisma.labels.findFirst({
         where: {
-          workspace_id: label.workspace_id,
+          project_id: label.project_id,
           name: dto.name,
           id: { not: labelId },
         },
@@ -135,7 +135,7 @@ export class LabelsService {
     return updated;
   }
 
-  /**
+    /**
    * Delete label (will cascade to task_labels)
    */
   async delete(labelId: string, userId: string) {
@@ -150,8 +150,8 @@ export class LabelsService {
       throw new NotFoundException('Label not found');
     }
 
-    // Validate workspace access
-    await this.validateWorkspaceAccess(label.workspace_id, userId);
+    // Validate project access
+    await this.validateProjectAccess(label.project_id, userId);
 
     // Delete label (cascade will remove task_labels)
     await this.prisma.labels.delete({
@@ -174,7 +174,7 @@ export class LabelsService {
         where: { id: taskId },
         include: {
           projects: {
-            select: { workspace_id: true, name: true },
+            select: { id: true, workspace_id: true, name: true },
           },
           task_labels: true,
         },
@@ -192,13 +192,13 @@ export class LabelsService {
       throw new NotFoundException('Label not found');
     }
 
-    // Validate label belongs to task's workspace
-    if (task.projects.workspace_id !== label.workspace_id) {
-      throw new BadRequestException('Label not in same workspace as task');
+    // Validate label belongs to task's project
+    if (task.projects.id !== label.project_id) {
+      throw new BadRequestException('Label not in same project as task');
     }
 
-    // Validate workspace access
-    await this.validateWorkspaceAccess(task.projects.workspace_id, userId);
+    // Validate project access
+    await this.validateProjectAccess(task.projects.id, userId);
 
     // Check max labels limit
     if (task.task_labels.length >= MAX_LABELS_PER_TASK) {
@@ -257,7 +257,7 @@ export class LabelsService {
         tasks: {
           include: {
             projects: {
-              select: { workspace_id: true },
+              select: { id: true, workspace_id: true },
             },
           },
         },
@@ -268,11 +268,8 @@ export class LabelsService {
       throw new NotFoundException('Label not assigned to this task');
     }
 
-    // Validate workspace access
-    await this.validateWorkspaceAccess(
-      taskLabel.tasks.projects.workspace_id,
-      userId,
-    );
+    // Validate project access
+    await this.validateProjectAccess(taskLabel.tasks.projects.id, userId);
 
     // Remove label
     await this.prisma.task_labels.delete({
@@ -303,7 +300,7 @@ export class LabelsService {
       where: { id: taskId },
       include: {
         projects: {
-          select: { workspace_id: true },
+          select: { id: true, workspace_id: true },
         },
       },
     });
@@ -312,8 +309,8 @@ export class LabelsService {
       throw new NotFoundException('Task not found');
     }
 
-    // Validate workspace access
-    await this.validateWorkspaceAccess(task.projects.workspace_id, userId);
+    // Validate project access
+    await this.validateProjectAccess(task.projects.id, userId);
 
     const taskLabels = await this.prisma.task_labels.findMany({
       where: { task_id: taskId },
@@ -326,7 +323,57 @@ export class LabelsService {
   }
 
   /**
-   * Helper: Validate user has access to workspace
+   * Helper: Validate user has access to project
+   */
+  private async validateProjectAccess(projectId: string, userId: string) {
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        workspace_id: true,
+        type: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // Check workspace membership
+    const membership = await this.prisma.memberships.findUnique({
+      where: {
+        user_id_workspace_id: {
+          user_id: userId,
+          workspace_id: project.workspace_id,
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Access denied to this project');
+    }
+
+    // For TEAM projects, also check project membership
+    if (project.type === 'TEAM') {
+      const projectMember = await this.prisma.project_members.findUnique({
+        where: {
+          project_id_user_id: {
+            project_id: projectId,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (!projectMember) {
+        throw new ForbiddenException('Access denied to this team project');
+      }
+    }
+
+    return project;
+  }
+
+  /**
+   * Helper: Validate user has access to workspace (deprecated, use validateProjectAccess)
    */
   private async validateWorkspaceAccess(workspaceId: string, userId: string) {
     const membership = await this.prisma.memberships.findUnique({

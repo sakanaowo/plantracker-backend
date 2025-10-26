@@ -34,7 +34,7 @@
                             "raw": "{\n  \"name\": \"Bug\",\n  \"color\": \"red\",\n  \"description\": \"Bug fixes and issues\"\n}"
                         },
                         "url": {
-                            "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/labels",
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/labels",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -78,7 +78,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/labels",
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/labels",
                             "host": [
                                 "{{baseUrl}}"
                             ],

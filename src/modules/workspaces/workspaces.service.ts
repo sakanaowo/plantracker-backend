@@ -211,7 +211,6 @@ export class WorkspacesService {
           },
         },
         projects: true,
-        labels: true,
       },
     });
     if (!ws) throw new NotFoundException('Workspace not found');
