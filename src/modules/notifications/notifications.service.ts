@@ -67,9 +67,7 @@ export class NotificationsService {
         });
       } else {
         // User is offline → send via FCM (push notification)
-        this.logger.log(
-          `User ${data.assigneeId} is OFFLINE → sending via FCM`,
-        );
+        this.logger.log(`User ${data.assigneeId} is OFFLINE → sending via FCM`);
 
         const assigneeDevice = await this.prisma.user_devices.findFirst({
           where: {
@@ -374,8 +372,7 @@ export class NotificationsService {
               priority: notification.priority === 'HIGH' ? 'high' : 'normal',
               notification: {
                 channelId: this.getChannelId(notification.type),
-                priority:
-                  notification.priority === 'HIGH' ? 'high' : 'default',
+                priority: notification.priority === 'HIGH' ? 'high' : 'default',
                 defaultSound: true,
               },
             },
@@ -408,7 +405,9 @@ export class NotificationsService {
     },
   ): Promise<void> {
     await Promise.all(
-      userIds.map((userId) => this.sendNotificationToUser(userId, notification)),
+      userIds.map((userId) =>
+        this.sendNotificationToUser(userId, notification),
+      ),
     );
   }
 
