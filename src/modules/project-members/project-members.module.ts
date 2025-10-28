@@ -4,9 +4,10 @@ import { ProjectMembersService } from './project-members.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, ActivityLogsModule, UsersModule],
+  imports: [PrismaModule, ActivityLogsModule, UsersModule, NotificationsModule],
   controllers: [ProjectMembersController],
   providers: [ProjectMembersService],
   exports: [ProjectMembersService],

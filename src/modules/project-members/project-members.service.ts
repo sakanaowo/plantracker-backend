@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ConvertToTeamDto } from './dto/convert-to-team.dto';
@@ -17,6 +18,7 @@ export class ProjectMembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -102,6 +104,21 @@ export class ProjectMembersService {
       metadata: {
         email: user.email,
       },
+    });
+
+    // Send notification to invited user
+    const inviter = await this.prisma.users.findUnique({
+      where: { id: invitedBy },
+      select: { name: true },
+    });
+
+    await this.notificationsService.sendProjectInvite({
+      projectId,
+      projectName: project.name,
+      inviteeId: user.id,
+      invitedBy,
+      invitedByName: inviter?.name ?? 'Hệ thống',
+      role: dto.role ?? 'MEMBER',
     });
 
     return member;

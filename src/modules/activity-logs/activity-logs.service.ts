@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { activity_action, entity_type } from '@prisma/client';
+import { activity_action, entity_type, Prisma } from '@prisma/client';
 
 interface BaseLogParams {
   workspaceId?: string;
@@ -649,7 +649,7 @@ export class ActivityLogsService {
   }) {
     const limit = params.limit ?? 50;
 
-    const where: any = {};
+    const where: Prisma.activity_logsWhereInput = {};
     if (params.workspaceId) where.workspace_id = params.workspaceId;
     if (params.projectId) where.project_id = params.projectId;
     if (params.taskId) where.task_id = params.taskId;

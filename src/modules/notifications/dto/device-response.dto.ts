@@ -28,6 +28,6 @@ export class DeviceResponseDto {
   @ApiProperty()
   isActive: boolean;
 
-  @ApiProperty()
-  lastActiveAt: Date;
+  @ApiProperty({ required: false })
+  lastActiveAt?: Date;
 }
