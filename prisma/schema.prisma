@@ -5,10 +5,36 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("NEON_DATABASE_URL")
-  // directUrl = env("DIRECT_URL")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model activity_logs {
+  id           String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id String?         @db.Uuid
+  project_id   String?         @db.Uuid
+  board_id     String?         @db.Uuid
+  task_id      String?         @db.Uuid
+  user_id      String          @db.Uuid
+  action       activity_action
+  entity_type  entity_type
+  entity_id    String?         @db.Uuid
+  entity_name  String?
+  old_value    Json?
+  new_value    Json?
+  metadata     Json?
+  created_at   DateTime        @default(now()) @db.Timestamptz(6)
+  boards       boards?         @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  projects     projects?       @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks        tasks?          @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workspaces   workspaces?     @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([board_id, created_at], map: "idx_activity_board")
+  @@index([project_id, created_at], map: "idx_activity_project")
+  @@index([task_id, created_at], map: "idx_activity_task")
+  @@index([user_id, created_at], map: "idx_activity_user")
+  @@index([workspace_id, created_at], map: "idx_activity_workspace")
+}
+
 model attachments {
   id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   task_id     String   @db.Uuid
@@ -22,7 +48,6 @@ model attachments {
   @@index([task_id, created_at], map: "idx_attachments_task")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model boards {
   id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   project_id    String          @db.Uuid
@@ -30,27 +55,34 @@ model boards {
   order         Int
   created_at    DateTime        @default(now()) @db.Timestamptz(6)
   updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  activity_logs activity_logs[]
   projects      projects        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tasks         tasks[]
-  activity_logs activity_logs[]
 
   @@index([project_id, order], map: "idx_boards_project_order")
 }
 
-/// Simplified checklist - merged checklist and checklist_items into one table
-model task_checklist_items {
-  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  task_id       String          @db.Uuid
-  content       String
-  is_done       Boolean         @default(false)
-  created_at    DateTime        @default(now()) @db.Timestamptz(6)
-  tasks         tasks           @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  activity_logs activity_logs[]
+model checklist_items {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_id String     @db.Uuid
+  content      String
+  is_done      Boolean    @default(false)
+  position     Decimal    @default(0) @db.Decimal(10, 3)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  checklists   checklists @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([task_id, created_at], map: "idx_task_checklist_task")
+  @@index([checklist_id, position], map: "idx_checklist_items_order")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model checklists {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  task_id         String            @db.Uuid
+  title           String
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  checklist_items checklist_items[]
+  tasks           tasks             @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
 model email_queue {
   id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   to_email     String
@@ -65,7 +97,6 @@ model email_queue {
   @@index([status, scheduled_at], map: "idx_email_queue_sched")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model events {
   id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   project_id         String               @db.Uuid
@@ -83,7 +114,6 @@ model events {
   participants       participants[]
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model external_event_map {
   id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   event_id          String    @db.Uuid
@@ -98,7 +128,6 @@ model external_event_map {
   @@index([event_id], map: "idx_external_event_event")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model integration_tokens {
   id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   user_id          String       @db.Uuid
@@ -130,21 +159,19 @@ model issue_links {
   @@id([source_task_id, target_task_id, link_type])
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model labels {
   id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id  String        @db.Uuid
   name        String
   color       String
   created_at  DateTime      @default(now()) @db.Timestamptz(6)
   updated_at  DateTime      @default(now()) @db.Timestamptz(6)
+  project_id  String        @db.Uuid
   projects    projects      @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   task_labels task_labels[]
 
   @@index([project_id, created_at], map: "idx_labels_project")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model memberships {
   id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   role         role
@@ -155,39 +182,6 @@ model memberships {
   workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, workspace_id])
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model activity_logs {
-  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspace_id      String?         @db.Uuid
-  project_id        String?         @db.Uuid
-  board_id          String?         @db.Uuid
-  task_id           String?         @db.Uuid
-  checklist_item_id String?         @db.Uuid // ← Thêm để track checklist items
-  user_id           String          @db.Uuid
-  action            activity_action
-  entity_type       entity_type
-  entity_id         String?         @db.Uuid
-  entity_name       String? // Tên của entity (card name, board name, etc.)
-  old_value         Json? // Giá trị cũ (cho update actions)
-  new_value         Json? // Giá trị mới (cho update actions)
-  metadata          Json? // Thông tin bổ sung
-  created_at        DateTime        @default(now()) @db.Timestamptz(6)
-
-  users                users                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  workspaces           workspaces?           @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  projects             projects?             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  boards               boards?               @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  tasks                tasks?                @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  task_checklist_items task_checklist_items? @relation(fields: [checklist_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([workspace_id, created_at], map: "idx_activity_workspace")
-  @@index([project_id, created_at], map: "idx_activity_project")
-  @@index([board_id, created_at], map: "idx_activity_board")
-  @@index([task_id, created_at], map: "idx_activity_task")
-  @@index([user_id, created_at], map: "idx_activity_user")
-  @@index([checklist_item_id, created_at], map: "idx_activity_checklist_item")
 }
 
 model notifications {
@@ -215,7 +209,6 @@ model notifications {
   @@index([user_id, status, scheduled_at], map: "idx_notifications_user_sched")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model participants {
   id         String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   event_id   String              @db.Uuid
@@ -229,26 +222,24 @@ model participants {
   @@unique([event_id, email])
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model projects {
-  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspace_id    String            @db.Uuid
-  name            String
-  description     String?
-  key             String?           @db.VarChar(10)
-  type            project_type      @default(PERSONAL)
-  issue_seq       Int               @default(0)
-  board_type      String            @default("KANBAN") @db.VarChar(10)
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
-  boards          boards[]
-  events          events[]
-  workspaces      workspaces        @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sprints         sprints[]
-  tasks           tasks[]
-  activity_logs   activity_logs[]
-  project_members project_members[]
-  labels          labels[]
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id  String          @db.Uuid
+  name          String
+  description   String?
+  key           String?         @db.VarChar(10)
+  issue_seq     Int             @default(0)
+  board_type    String          @default("KANBAN") @db.VarChar(10)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  type          project_type    @default(PERSONAL)
+  activity_logs activity_logs[]
+  boards        boards[]
+  events        events[]
+  labels        labels[]
+  workspaces    workspaces      @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sprints       sprints[]
+  tasks         tasks[]
 
   @@unique([workspace_id, key])
   @@index([workspace_id])
@@ -267,24 +258,6 @@ model sprints {
   tasks      tasks[]
 }
 
-/// Project members for TEAM projects with role-based access control
-model project_members {
-  id         String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id String       @db.Uuid
-  user_id    String       @db.Uuid
-  role       project_role @default(MEMBER)
-  added_by   String?      @db.Uuid
-  created_at DateTime     @default(now()) @db.Timestamptz(6)
-
-  projects projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users    users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([project_id, user_id])
-  @@index([project_id])
-  @@index([user_id])
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model task_comments {
   id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   task_id    String   @db.Uuid
@@ -297,7 +270,6 @@ model task_comments {
   @@index([task_id, created_at], map: "idx_task_comments_task")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model task_labels {
   task_id  String @db.Uuid
   label_id String @db.Uuid
@@ -307,49 +279,48 @@ model task_labels {
   @@id([task_id, label_id])
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model tasks {
-  id                                            String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id                                    String                 @db.Uuid
-  board_id                                      String                 @db.Uuid
+  id                                            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id                                    String          @db.Uuid
+  board_id                                      String          @db.Uuid
   title                                         String
   description                                   String?
-  assignee_id                                   String?                @db.Uuid
-  created_by                                    String?                @db.Uuid
-  due_at                                        DateTime?              @db.Timestamptz(6)
-  start_at                                      DateTime?              @db.Timestamptz(6)
+  assignee_id                                   String?         @db.Uuid
+  created_by                                    String?         @db.Uuid
+  due_at                                        DateTime?       @db.Timestamptz(6)
+  start_at                                      DateTime?       @db.Timestamptz(6)
   priority                                      priority?
-  position                                      Decimal                @default(0) @db.Decimal(10, 3)
-  issue_key                                     String?                @unique(map: "ux_tasks_issue_key") @db.VarChar(32)
+  position                                      Decimal         @default(0) @db.Decimal(10, 3)
+  issue_key                                     String?         @unique(map: "ux_tasks_issue_key") @db.VarChar(32)
   type                                          issue_type?
-  status                                        issue_status?          @default(TO_DO)
-  sprint_id                                     String?                @db.Uuid
-  epic_id                                       String?                @db.Uuid
-  parent_task_id                                String?                @db.Uuid
+  status                                        issue_status?   @default(TO_DO)
+  sprint_id                                     String?         @db.Uuid
+  epic_id                                       String?         @db.Uuid
+  parent_task_id                                String?         @db.Uuid
   story_points                                  Int?
   original_estimate_sec                         Int?
   remaining_estimate_sec                        Int?
-  created_at                                    DateTime               @default(now()) @db.Timestamptz(6)
-  updated_at                                    DateTime               @default(now()) @db.Timestamptz(6)
-  deleted_at                                    DateTime?              @db.Timestamptz(6)
+  created_at                                    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at                                    DateTime        @default(now()) @db.Timestamptz(6)
+  deleted_at                                    DateTime?       @db.Timestamptz(6)
+  activity_logs                                 activity_logs[]
   attachments                                   attachments[]
-  task_checklist_items                          task_checklist_items[]
-  issue_links_issue_links_source_task_idTotasks issue_links[]          @relation("issue_links_source_task_idTotasks")
-  issue_links_issue_links_target_task_idTotasks issue_links[]          @relation("issue_links_target_task_idTotasks")
+  checklists                                    checklists[]
+  issue_links_issue_links_source_task_idTotasks issue_links[]   @relation("issue_links_source_task_idTotasks")
+  issue_links_issue_links_target_task_idTotasks issue_links[]   @relation("issue_links_target_task_idTotasks")
   task_comments                                 task_comments[]
   task_labels                                   task_labels[]
-  tasks_tasks_epic_idTotasks                    tasks?                 @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
-  other_tasks_tasks_epic_idTotasks              tasks[]                @relation("tasks_epic_idTotasks")
-  tasks_tasks_parent_task_idTotasks             tasks?                 @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
-  other_tasks_tasks_parent_task_idTotasks       tasks[]                @relation("tasks_parent_task_idTotasks")
-  sprints                                       sprints?               @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
-  users_tasks_assignee_idTousers                users?                 @relation("tasks_assignee_idTousers", fields: [assignee_id], references: [id], onUpdate: NoAction)
-  boards                                        boards                 @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_tasks_created_byTousers                 users?                 @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
-  projects                                      projects               @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks_tasks_epic_idTotasks                    tasks?          @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
+  other_tasks_tasks_epic_idTotasks              tasks[]         @relation("tasks_epic_idTotasks")
+  tasks_tasks_parent_task_idTotasks             tasks?          @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
+  other_tasks_tasks_parent_task_idTotasks       tasks[]         @relation("tasks_parent_task_idTotasks")
+  sprints                                       sprints?        @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
+  users_tasks_assignee_idTousers                users?          @relation("tasks_assignee_idTousers", fields: [assignee_id], references: [id], onUpdate: NoAction)
+  boards                                        boards          @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_tasks_created_byTousers                 users?          @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  projects                                      projects        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   time_entries                                  time_entries[]
   watchers                                      watchers[]
-  activity_logs                                 activity_logs[]
 
   @@index([assignee_id], map: "idx_tasks_assignee")
   @@index([board_id, position], map: "idx_tasks_board_position")
@@ -357,9 +328,6 @@ model tasks {
   @@index([status], map: "idx_tasks_status")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This table contains exclusion constraints and requires additional setup for migrations. Visit https://pris.ly/d/exclusion-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model time_entries {
   id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   task_id      String    @db.Uuid
@@ -375,7 +343,6 @@ model time_entries {
   @@index([user_id, start_at], map: "idx_time_entries_user_start")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model user_devices {
   id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   user_id        String    @db.Uuid
@@ -392,16 +359,16 @@ model user_devices {
   @@index([user_id, is_active], map: "idx_user_devices_user_active")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model users {
   id                             String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name                           String
   email                          String               @unique
   password_hash                  String
   avatar_url                     String?
-  firebase_uid                   String               @unique @map("firebase_uid")
+  firebase_uid                   String               @unique
   created_at                     DateTime             @default(now()) @db.Timestamptz(6)
   updated_at                     DateTime             @default(now()) @db.Timestamptz(6)
+  activity_logs                  activity_logs[]
   events                         events[]
   integration_tokens             integration_tokens[]
   memberships                    memberships[]
@@ -414,8 +381,6 @@ model users {
   user_devices                   user_devices[]
   watchers                       watchers[]
   workspaces                     workspaces[]
-  activity_logs                  activity_logs[]
-  project_members                project_members[]
 }
 
 model watchers {
@@ -428,23 +393,54 @@ model watchers {
   @@id([task_id, user_id])
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model workspaces {
   id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name          String
   owner_id      String          @db.Uuid
   created_at    DateTime        @default(now()) @db.Timestamptz(6)
   updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  activity_logs activity_logs[]
   memberships   memberships[]
   projects      projects[]
   users         users           @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  activity_logs activity_logs[]
+}
+
+enum activity_action {
+  CREATED
+  UPDATED
+  DELETED
+  ADDED
+  REMOVED
+  MOVED
+  RENAMED
+  ASSIGNED
+  UNASSIGNED
+  COMPLETED
+  REOPENED
+  COMMENTED
+  ATTACHED
+  ARCHIVED
+  RESTORED
 }
 
 enum email_status {
   QUEUED
   SENT
   FAILED
+}
+
+enum entity_type {
+  WORKSPACE
+  PROJECT
+  BOARD
+  TASK
+  CHECKLIST
+  CHECKLIST_ITEM
+  COMMENT
+  ATTACHMENT
+  LABEL
+  SPRINT
+  EVENT
 }
 
 enum issue_link_type {
@@ -519,6 +515,11 @@ enum priority {
   HIGH
 }
 
+enum project_type {
+  PERSONAL
+  TEAM
+}
+
 enum provider {
   GOOGLE_CALENDAR
   OUTLOOK
@@ -532,59 +533,8 @@ enum role {
   MEMBER
 }
 
-enum project_role {
-  OWNER
-  ADMIN
-  MEMBER
-  VIEWER
-}
-
 enum token_status {
   ACTIVE
   REVOKED
   EXPIRED
-}
-
-enum project_type {
-  PERSONAL
-  TEAM
-}
-
-enum activity_action {
-  CREATED // Tạo entity mới
-  UPDATED // Cập nhật entity
-  DELETED // Xóa entity
-  ADDED // Thêm entity vào collection (e.g., add member)
-  REMOVED // Xóa entity khỏi collection
-  MOVED // Di chuyển entity (e.g., move task to another board)
-  RENAMED // Đổi tên entity
-  ASSIGNED // Gán task cho user
-  UNASSIGNED // Bỏ gán task
-  COMPLETED // Đánh dấu hoàn thành (task, sprint)
-  REOPENED // Mở lại task đã close
-  COMMENTED // Thêm comment
-  ATTACHED // Thêm attachment
-  ARCHIVED // Lưu trữ entity
-  RESTORED // Khôi phục entity đã archive
-  CHECKED // Đánh dấu checklist item done
-  UNCHECKED // Bỏ đánh dấu checklist item
-  DUPLICATED // Nhân bản entity
-  LINKED // Tạo liên kết giữa các entities
-  UNLINKED // Xóa liên kết
-}
-
-enum entity_type {
-  WORKSPACE
-  PROJECT
-  BOARD
-  TASK
-  TASK_CHECKLIST_ITEM // Updated to match table name
-  COMMENT
-  ATTACHMENT
-  LABEL
-  SPRINT
-  EVENT
-  TIME_ENTRY // Thêm để track time entries
-  WATCHER // Thêm để track watchers
-  MEMBERSHIP // Thêm để track workspace members
 }
