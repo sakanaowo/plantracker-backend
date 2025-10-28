@@ -2,9 +2,15 @@ import {
   Injectable,
   BadRequestException,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WorkspacesService } from 'src/modules/workspaces/workspaces.service';
+import {
+  RegisterDeviceDto,
+  UpdateTokenDto,
+  DeviceResponseDto,
+} from 'src/modules/notifications/dto';
 import * as admin from 'firebase-admin';
 import { Prisma } from '@prisma/client';
 
@@ -305,5 +311,150 @@ export class UsersService {
         updated_at: new Date(),
       },
     });
+  }
+
+  // ==================== FCM DEVICE MANAGEMENT ====================
+
+  /**
+   * Register or update FCM device token
+   */
+  async registerDevice(
+    userId: string,
+    dto: RegisterDeviceDto,
+  ): Promise<DeviceResponseDto> {
+    // Check if device already exists by fcm_token
+    const existingDevice = await this.prisma.user_devices.findUnique({
+      where: { fcm_token: dto.fcmToken },
+    });
+
+    if (existingDevice) {
+      // Update existing device
+      const updated = await this.prisma.user_devices.update({
+        where: { id: existingDevice.id },
+        data: {
+          user_id: userId, // Re-assign to current user if changed
+          platform: dto.platform,
+          device_model: dto.deviceModel ?? null,
+          app_version: dto.appVersion ?? null,
+          locale: dto.locale ?? null,
+          timezone: dto.timezone ?? null,
+          is_active: true,
+          last_active_at: new Date(),
+        },
+      });
+      return this.mapDeviceToDto(updated);
+    }
+
+    // Create new device
+    const device = await this.prisma.user_devices.create({
+      data: {
+        user_id: userId,
+        fcm_token: dto.fcmToken,
+        platform: dto.platform,
+        device_model: dto.deviceModel ?? null,
+        app_version: dto.appVersion ?? null,
+        locale: dto.locale ?? null,
+        timezone: dto.timezone ?? null,
+        is_active: true,
+        last_active_at: new Date(),
+      },
+    });
+
+    return this.mapDeviceToDto(device);
+  }
+
+  /**
+   * Update FCM token for existing device
+   */
+  async updateFcmToken(
+    userId: string,
+    dto: UpdateTokenDto,
+  ): Promise<DeviceResponseDto> {
+    // Find device by ID and verify ownership
+    const device = await this.prisma.user_devices.findFirst({
+      where: {
+        id: dto.deviceId,
+        user_id: userId,
+      },
+    });
+
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    // Update to new token
+    const updated = await this.prisma.user_devices.update({
+      where: { id: device.id },
+      data: {
+        fcm_token: dto.newFcmToken,
+        last_active_at: new Date(),
+      },
+    });
+
+    return this.mapDeviceToDto(updated);
+  }
+
+  /**
+   * Unregister device (soft delete by setting is_active = false)
+   */
+  async unregisterDevice(
+    userId: string,
+    deviceId: string,
+  ): Promise<{ message: string }> {
+    const device = await this.prisma.user_devices.findFirst({
+      where: {
+        id: deviceId,
+        user_id: userId,
+      },
+    });
+
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    await this.prisma.user_devices.update({
+      where: { id: deviceId },
+      data: {
+        is_active: false,
+        last_active_at: new Date(),
+      },
+    });
+
+    return { message: 'Device unregistered successfully' };
+  }
+
+  /**
+   * Get all active devices for user
+   */
+  async getUserDevices(userId: string): Promise<DeviceResponseDto[]> {
+    const devices = await this.prisma.user_devices.findMany({
+      where: {
+        user_id: userId,
+        is_active: true,
+      },
+      orderBy: {
+        last_active_at: 'desc',
+      },
+    });
+
+    return devices.map((d) => this.mapDeviceToDto(d));
+  }
+
+  /**
+   * Helper: Map Prisma model to DTO
+   */
+  private mapDeviceToDto(device: any): DeviceResponseDto {
+    return {
+      id: device.id,
+      userId: device.user_id,
+      fcmToken: device.fcm_token,
+      platform: device.platform,
+      deviceModel: device.device_model,
+      appVersion: device.app_version,
+      locale: device.locale,
+      timezone: device.timezone,
+      isActive: device.is_active,
+      lastActiveAt: device.last_active_at,
+    };
   }
 }
