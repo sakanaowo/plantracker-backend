@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,7 +24,7 @@
             margin: 0 auto;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
             overflow: hidden;
         }
 
@@ -62,8 +63,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         .controls {
@@ -83,7 +91,8 @@
             color: #374151;
         }
 
-        input, button {
+        input,
+        button {
             width: 100%;
             padding: 10px;
             border: 1px solid #d1d5db;
@@ -141,6 +150,7 @@
                 opacity: 0;
                 transform: translateX(-20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateX(0);
@@ -218,6 +228,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -236,22 +247,13 @@
         <div class="controls">
             <div class="form-group">
                 <label for="jwtToken">JWT Token</label>
-                <input 
-                    type="text" 
-                    id="jwtToken" 
-                    placeholder="Paste your JWT token here..."
-                    value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                >
+                <input type="text" id="jwtToken" placeholder="Paste your JWT token here..."
+                    value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
             </div>
 
             <div class="form-group">
                 <label for="serverUrl">Server URL</label>
-                <input 
-                    type="text" 
-                    id="serverUrl" 
-                    value="http://localhost:3000"
-                    placeholder="http://localhost:3000"
-                >
+                <input type="text" id="serverUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
             </div>
 
             <div class="button-group">
@@ -289,14 +291,14 @@
             const logsContainer = document.getElementById('logs');
             const time = new Date().toLocaleTimeString();
             const logClass = type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : 'log-info';
-            
+
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             entry.innerHTML = `
                 <span class="log-time">[${time}]</span>
                 <span class="${logClass}">${message}</span>
             `;
-            
+
             logsContainer.appendChild(entry);
             logsContainer.scrollTop = logsContainer.scrollHeight;
         }
@@ -408,7 +410,7 @@
 
         function renderNotifications() {
             const container = document.getElementById('notificationsContainer');
-            
+
             if (notifications.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -444,4 +446,5 @@
         }, 1000);
     </script>
 </body>
+
 </html>

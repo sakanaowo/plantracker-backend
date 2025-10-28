@@ -6,11 +6,13 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsGateway } from './notifications.gateway';
 import { FcmModule } from '../fcm/fcm.module';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     FcmModule,
     PrismaModule,
+    UsersModule, // Required for CombinedAuthGuard
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
