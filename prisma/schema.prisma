@@ -8,25 +8,27 @@ datasource db {
 }
 
 model activity_logs {
-  id           String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspace_id String?         @db.Uuid
-  project_id   String?         @db.Uuid
-  board_id     String?         @db.Uuid
-  task_id      String?         @db.Uuid
-  user_id      String          @db.Uuid
-  action       activity_action
-  entity_type  entity_type
-  entity_id    String?         @db.Uuid
-  entity_name  String?
-  old_value    Json?
-  new_value    Json?
-  metadata     Json?
-  created_at   DateTime        @default(now()) @db.Timestamptz(6)
-  boards       boards?         @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  projects     projects?       @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  tasks        tasks?          @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users        users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  workspaces   workspaces?     @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id      String?          @db.Uuid
+  project_id        String?          @db.Uuid
+  board_id          String?          @db.Uuid
+  task_id           String?          @db.Uuid
+  checklist_item_id String?          @db.Uuid
+  user_id           String           @db.Uuid
+  action            activity_action
+  entity_type       entity_type
+  entity_id         String?          @db.Uuid
+  entity_name       String?
+  old_value         Json?
+  new_value         Json?
+  metadata          Json?
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  boards            boards?          @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  projects          projects?        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks             tasks?           @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workspaces        workspaces?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  checklist_items   checklist_items? @relation(fields: [checklist_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([board_id, created_at], map: "idx_activity_board")
   @@index([project_id, created_at], map: "idx_activity_project")
@@ -63,13 +65,14 @@ model boards {
 }
 
 model checklist_items {
-  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  checklist_id String     @db.Uuid
-  content      String
-  is_done      Boolean    @default(false)
-  position     Decimal    @default(0) @db.Decimal(10, 3)
-  created_at   DateTime   @default(now()) @db.Timestamptz(6)
-  checklists   checklists @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_id  String          @db.Uuid
+  content       String
+  is_done       Boolean         @default(false)
+  position      Decimal         @default(0) @db.Decimal(10, 3)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  checklists    checklists      @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity_logs activity_logs[]
 
   @@index([checklist_id, position], map: "idx_checklist_items_order")
 }
@@ -222,24 +225,40 @@ model participants {
   @@unique([event_id, email])
 }
 
+model project_members {
+  id         String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id String       @db.Uuid
+  user_id    String       @db.Uuid
+  role       project_role @default(MEMBER)
+  added_by   String?      @db.Uuid
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  projects   projects     @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, user_id])
+  @@index([project_id], map: "idx_project_members_project")
+  @@index([user_id], map: "idx_project_members_user")
+}
+
 model projects {
-  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspace_id  String          @db.Uuid
-  name          String
-  description   String?
-  key           String?         @db.VarChar(10)
-  issue_seq     Int             @default(0)
-  board_type    String          @default("KANBAN") @db.VarChar(10)
-  created_at    DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
-  type          project_type    @default(PERSONAL)
-  activity_logs activity_logs[]
-  boards        boards[]
-  events        events[]
-  labels        labels[]
-  workspaces    workspaces      @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sprints       sprints[]
-  tasks         tasks[]
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id    String            @db.Uuid
+  name            String
+  description     String?
+  key             String?           @db.VarChar(10)
+  issue_seq       Int               @default(0)
+  board_type      String            @default("KANBAN") @db.VarChar(10)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  type            project_type      @default(PERSONAL)
+  activity_logs   activity_logs[]
+  boards          boards[]
+  events          events[]
+  labels          labels[]
+  project_members project_members[]
+  workspaces      workspaces        @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sprints         sprints[]
+  tasks           tasks[]
 
   @@unique([workspace_id, key])
   @@index([workspace_id])
@@ -374,6 +393,7 @@ model users {
   memberships                    memberships[]
   notifications                  notifications[]
   participants                   participants[]
+  project_members                project_members[]
   task_comments                  task_comments[]
   tasks_tasks_assignee_idTousers tasks[]              @relation("tasks_assignee_idTousers")
   tasks_tasks_created_byTousers  tasks[]              @relation("tasks_created_byTousers")
@@ -421,6 +441,9 @@ enum activity_action {
   ATTACHED
   ARCHIVED
   RESTORED
+  CHECKED
+  UNCHECKED
+  MEMBERSHIP
 }
 
 enum email_status {
@@ -436,11 +459,13 @@ enum entity_type {
   TASK
   CHECKLIST
   CHECKLIST_ITEM
+  TASK_CHECKLIST_ITEM
   COMMENT
   ATTACHMENT
   LABEL
   SPRINT
   EVENT
+  MEMBERSHIP
 }
 
 enum issue_link_type {
@@ -518,6 +543,13 @@ enum priority {
 enum project_type {
   PERSONAL
   TEAM
+}
+
+enum project_role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
 }
 
 enum provider {
