@@ -16,6 +16,34 @@ export class TasksService {
     private readonly activityLogsService: ActivityLogsService,
   ) {}
 
+  /**
+   * Helper to get workspace/project/board context for a task
+   */
+  private async getTaskContext(taskId: string) {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+      include: {
+        projects: {
+          select: {
+            id: true,
+            workspace_id: true,
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    return {
+      workspaceId: task?.projects?.workspace_id,
+      projectId: task?.project_id,
+      boardId: task?.board_id,
+    };
+  }
+
   listByBoard(boardId: string): Promise<tasks[]> {
     return this.prisma.tasks.findMany({
       where: { board_id: boardId, deleted_at: null },
@@ -109,6 +137,9 @@ export class TasksService {
           userId: dto.createdBy,
           newAssigneeId: finalAssigneeId,
           taskTitle: task.title,
+          workspaceId: project.workspace_id,
+          projectId: dto.projectId,
+          boardId: dto.boardId,
         });
       }
     }
@@ -192,6 +223,7 @@ export class TasksService {
       }
 
       if (Object.keys(changes).length > 0) {
+        const context = await this.getTaskContext(id);
         await this.activityLogsService.logTaskUpdated({
           taskId: id,
           userId: dto.updatedBy,
@@ -202,6 +234,7 @@ export class TasksService {
           newValue: Object.fromEntries(
             Object.entries(changes).map(([k, v]) => [k, v.new]),
           ),
+          ...context,
         });
       }
     }
@@ -230,6 +263,7 @@ export class TasksService {
 
       // Log assignment change
       if (dto.updatedBy) {
+        const context = await this.getTaskContext(id);
         if (currentTask.assignee_id) {
           // Re-assignment
           await this.activityLogsService.logTaskAssigned({
@@ -238,6 +272,7 @@ export class TasksService {
             oldAssigneeId: currentTask.assignee_id,
             newAssigneeId: dto.assigneeId,
             taskTitle: updatedTask.title,
+            ...context,
           });
         } else {
           // Initial assignment
@@ -246,6 +281,7 @@ export class TasksService {
             userId: dto.updatedBy,
             newAssigneeId: dto.assigneeId,
             taskTitle: updatedTask.title,
+            ...context,
           });
         }
       }
@@ -255,11 +291,13 @@ export class TasksService {
       dto.updatedBy
     ) {
       // Unassignment
+      const context = await this.getTaskContext(id);
       await this.activityLogsService.logTaskUnassigned({
         taskId: id,
         userId: dto.updatedBy,
         oldAssigneeId: currentTask.assignee_id,
         taskTitle: updatedTask.title,
+        ...context,
       });
     }
 
@@ -325,12 +363,15 @@ export class TasksService {
 
     // Log task move if board changed
     if (movedBy && currentTask && currentTask.board_id !== toBoardId) {
+      const context = await this.getTaskContext(id);
       await this.activityLogsService.logTaskMoved({
         taskId: id,
         userId: movedBy,
         fromBoardId: currentTask.board_id,
         toBoardId: toBoardId,
         taskTitle: currentTask.title,
+        workspaceId: context.workspaceId,
+        projectId: context.projectId,
       });
     }
 
@@ -351,10 +392,12 @@ export class TasksService {
 
     // Log task deletion
     if (deletedBy && task) {
+      const context = await this.getTaskContext(id);
       await this.activityLogsService.logTaskDeleted({
         taskId: id,
         userId: deletedBy,
         taskTitle: task.title,
+        ...context,
       });
     }
 
