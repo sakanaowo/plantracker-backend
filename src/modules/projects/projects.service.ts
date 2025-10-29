@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { projects } from '@prisma/client'; // type do Prisma generate
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private activityLogsService: ActivityLogsService,
+  ) {}
 
   listByWorkSpace(workspaceId: string): Promise<projects[]> {
     return this.prisma.projects.findMany({
@@ -62,7 +66,7 @@ export class ProjectsService {
     }
   }
 
-  async create(dto: CreateProjectDto): Promise<projects> {
+  async create(dto: CreateProjectDto, createdBy?: string): Promise<projects> {
     let projectKey: string;
 
     if (dto.key) {
@@ -113,23 +117,45 @@ export class ProjectsService {
       return newProject;
     });
 
+    // Log project creation
+    if (createdBy) {
+      await this.activityLogsService.logProjectCreated({
+        workspaceId: dto.workspaceId,
+        projectId: project.id,
+        userId: createdBy,
+        projectName: project.name,
+        projectType: project.type,
+      });
+    }
+
     return project;
   }
 
-  async update(id: string, dto: UpdateProjectDto): Promise<projects> {
+  async update(
+    id: string,
+    dto: UpdateProjectDto,
+    updatedBy?: string,
+  ): Promise<projects> {
+    // Get current project for logging
+    const currentProject = await this.prisma.projects.findUnique({
+      where: { id },
+      select: {
+        workspace_id: true,
+        name: true,
+        key: true,
+        description: true,
+        type: true,
+      },
+    });
+
+    if (!currentProject) {
+      throw new ConflictException('Project not found');
+    }
+
     if (dto.key) {
-      const project = await this.prisma.projects.findUnique({
-        where: { id },
-        select: { workspace_id: true },
-      });
-
-      if (!project) {
-        throw new ConflictException('Project not found');
-      }
-
       const existing = await this.prisma.projects.findFirst({
         where: {
-          workspace_id: project.workspace_id,
+          workspace_id: currentProject.workspace_id,
           key: dto.key,
           id: { not: id },
         },
@@ -142,7 +168,7 @@ export class ProjectsService {
       }
     }
 
-    return this.prisma.projects.update({
+    const updatedProject = await this.prisma.projects.update({
       where: { id },
       data: {
         name: dto.name,
@@ -151,5 +177,48 @@ export class ProjectsService {
         type: dto.type, // Allow changing project type
       },
     });
+
+    // Log project update
+    if (updatedBy) {
+      const changes: Record<
+        string,
+        { old: string | null; new: string | null }
+      > = {};
+
+      if (dto.name !== undefined && dto.name !== currentProject.name) {
+        changes.name = { old: currentProject.name, new: dto.name };
+      }
+      if (dto.key !== undefined && dto.key !== currentProject.key) {
+        changes.key = { old: currentProject.key, new: dto.key };
+      }
+      if (
+        dto.description !== undefined &&
+        dto.description !== currentProject.description
+      ) {
+        changes.description = {
+          old: currentProject.description,
+          new: dto.description,
+        };
+      }
+      if (dto.type !== undefined && dto.type !== currentProject.type) {
+        changes.type = { old: currentProject.type, new: dto.type };
+      }
+
+      if (Object.keys(changes).length > 0) {
+        await this.activityLogsService.logProjectUpdated({
+          projectId: id,
+          userId: updatedBy,
+          projectName: updatedProject.name,
+          oldValue: Object.fromEntries(
+            Object.entries(changes).map(([k, v]) => [k, v.old]),
+          ),
+          newValue: Object.fromEntries(
+            Object.entries(changes).map(([k, v]) => [k, v.new]),
+          ),
+        });
+      }
+    }
+
+    return updatedProject;
   }
 }

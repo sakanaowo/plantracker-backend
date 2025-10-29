@@ -443,18 +443,29 @@ export class UsersService {
   /**
    * Helper: Map Prisma model to DTO
    */
-  private mapDeviceToDto(device: any): DeviceResponseDto {
+  private mapDeviceToDto(device: {
+    id: string;
+    user_id: string;
+    fcm_token: string;
+    platform: string;
+    device_model: string | null;
+    app_version: string | null;
+    locale: string | null;
+    timezone: string | null;
+    is_active: boolean;
+    last_active_at: Date | null;
+  }): DeviceResponseDto {
     return {
       id: device.id,
       userId: device.user_id,
       fcmToken: device.fcm_token,
       platform: device.platform,
-      deviceModel: device.device_model,
-      appVersion: device.app_version,
-      locale: device.locale,
-      timezone: device.timezone,
+      deviceModel: device.device_model ?? undefined,
+      appVersion: device.app_version ?? undefined,
+      locale: device.locale ?? undefined,
+      timezone: device.timezone ?? undefined,
       isActive: device.is_active,
-      lastActiveAt: device.last_active_at,
+      lastActiveAt: device.last_active_at ?? undefined,
     };
   }
 }

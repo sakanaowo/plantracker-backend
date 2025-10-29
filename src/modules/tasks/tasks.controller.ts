@@ -62,8 +62,9 @@ export class TasksController {
   move(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: MoveTaskDto,
+    @CurrentUser('id') userId: string,
   ): Promise<tasks> {
-    return this.svc.move(id, dto.toBoardId, dto.beforeId, dto.afterId);
+    return this.svc.move(id, dto.toBoardId, dto.beforeId, dto.afterId, userId);
   }
 
   @Patch(':id')
@@ -79,8 +80,11 @@ export class TasksController {
   }
 
   @Delete(':id')
-  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks> {
-    return this.svc.softDelete(id);
+  remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks> {
+    return this.svc.softDelete(id, userId);
   }
 
   // ==================== COMMENTS ====================

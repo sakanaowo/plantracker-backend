@@ -18,6 +18,7 @@ import { LabelsModule } from './modules/labels/labels.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ProjectMembersModule } from './modules/project-members/project-members.module';
+import { ChecklistsModule } from './modules/checklists/checklists.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ProjectMembersModule } from './modules/project-members/project-members.
     CommentsModule,
     AttachmentsModule,
     ProjectMembersModule,
+    ChecklistsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

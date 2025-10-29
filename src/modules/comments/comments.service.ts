@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { ListCommentsQueryDto } from './dto/list-comments-query.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class CommentsService {
@@ -56,15 +57,34 @@ export class CommentsService {
       },
     });
 
-    // Parse @mentions and send notifications
-    const mentionedUserIds = this.parseMentions(dto.body);
-    if (mentionedUserIds.length > 0) {
-      await this.notifyMentionedUsers({
+    // Get task assignee and creator for notification
+    const notifyUserIds: string[] = [];
+    if (task.assignee_id && task.assignee_id !== userId) {
+      notifyUserIds.push(task.assignee_id);
+    }
+    if (
+      task.created_by &&
+      task.created_by !== userId &&
+      !notifyUserIds.includes(task.created_by)
+    ) {
+      notifyUserIds.push(task.created_by);
+    }
+
+    // Send comment notification to assignee/creator
+    if (notifyUserIds.length > 0) {
+      const commenter = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+
+      await this.notificationsService.sendTaskComment({
         taskId,
         taskTitle: task.title,
+        projectName: task.projects.name,
+        commenterId: userId,
+        commenterName: commenter?.name ?? 'Someone',
         commentBody: dto.body,
-        mentionedUserIds,
-        commentAuthorId: userId,
+        notifyUserIds,
       });
     }
 
@@ -86,7 +106,7 @@ export class CommentsService {
     const sort = query.sort ?? 'desc';
 
     // Build where clause
-    const where: any = { task_id: taskId };
+    const where: Prisma.task_commentsWhereInput = { task_id: taskId };
 
     // Add cursor for pagination
     if (query.cursor) {
@@ -95,10 +115,11 @@ export class CommentsService {
       });
 
       if (cursorComment) {
-        where.created_at =
-          sort === 'desc'
-            ? { lt: cursorComment.created_at }
-            : { gt: cursorComment.created_at };
+        if (sort === 'desc') {
+          where.created_at = { lt: cursorComment.created_at };
+        } else {
+          where.created_at = { gt: cursorComment.created_at };
+        }
       }
     }
 
@@ -244,37 +265,37 @@ export class CommentsService {
   /**
    * Helper: Send notifications to mentioned users
    */
-  private async notifyMentionedUsers(params: {
-    taskId: string;
-    taskTitle: string;
-    commentBody: string;
-    mentionedUserIds: string[];
-    commentAuthorId: string;
-  }) {
-    // Get comment author name
-    const author = await this.prisma.users.findUnique({
-      where: { id: params.commentAuthorId },
-      select: { name: true },
-    });
+  // private async notifyMentionedUsers(params: {
+  //   taskId: string;
+  //   taskTitle: string;
+  //   commentBody: string;
+  //   mentionedUserIds: string[];
+  //   commentAuthorId: string;
+  // }) {
+  //   // Get comment author name
+  //   const author = await this.prisma.users.findUnique({
+  //     where: { id: params.commentAuthorId },
+  //     select: { name: true },
+  //   });
 
-    const authorName = author?.name ?? 'Someone';
+  //   const authorName = author?.name ?? 'Someone';
 
-    // Send notification to each mentioned user (except author)
-    for (const userId of params.mentionedUserIds) {
-      if (userId === params.commentAuthorId) continue; // Don't notify self
+  //   // Send notification to each mentioned user (except author)
+  //   for (const userId of params.mentionedUserIds) {
+  //     if (userId === params.commentAuthorId) continue; // Don't notify self
 
-      // TODO: Implement mention notification type in NotificationsService
-      // For now, we skip this or use a generic notification
-      // await this.notificationsService.sendMentionNotification({
-      //   userId,
-      //   taskId: params.taskId,
-      //   taskTitle: params.taskTitle,
-      //   mentionedBy: params.commentAuthorId,
-      //   mentionedByName: authorName,
-      //   commentBody: params.commentBody.substring(0, 100),
-      // });
-    }
-  }
+  //     // TODO: Implement mention notification type in NotificationsService
+  //     // For now, we skip this or use a generic notification
+  //     // await this.notificationsService.sendMentionNotification({
+  //     //   userId,
+  //     //   taskId: params.taskId,
+  //     //   taskTitle: params.taskTitle,
+  //     //   mentionedBy: params.commentAuthorId,
+  //     //   mentionedByName: authorName,
+  //     //   commentBody: params.commentBody.substring(0, 100),
+  //     // });
+  //   }
+  // }
 
   /**
    * Helper: Validate task exists and user has access

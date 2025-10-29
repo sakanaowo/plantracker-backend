@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { activity_action, entity_type } from '@prisma/client';
+import { activity_action, entity_type, Prisma } from '@prisma/client';
 
 interface BaseLogParams {
   workspaceId?: string;
@@ -26,23 +26,31 @@ export class ActivityLogsService {
    * Generic method to create activity log
    */
   private async log(data: BaseLogParams) {
-    return this.prisma.activity_logs.create({
-      data: {
-        workspace_id: data.workspaceId ?? null,
-        project_id: data.projectId ?? null,
-        board_id: data.boardId ?? null,
-        task_id: data.taskId ?? null,
-        checklist_item_id: data.checklistItemId ?? null,
-        user_id: data.userId,
-        action: data.action,
-        entity_type: data.entityType,
-        entity_id: data.entityId ?? null,
-        entity_name: data.entityName ?? null,
-        old_value: data.oldValue ?? null,
-        new_value: data.newValue ?? null,
-        metadata: data.metadata ?? null,
-      },
-    });
+    try {
+      const result = await this.prisma.activity_logs.create({
+        data: {
+          workspace_id: data.workspaceId ?? null,
+          project_id: data.projectId ?? null,
+          board_id: data.boardId ?? null,
+          task_id: data.taskId ?? null,
+          checklist_item_id: data.checklistItemId ?? null,
+          user_id: data.userId,
+          action: data.action,
+          entity_type: data.entityType,
+          entity_id: data.entityId ?? null,
+          entity_name: data.entityName ?? null,
+          old_value: data.oldValue ?? null,
+          new_value: data.newValue ?? null,
+          metadata: data.metadata ?? null,
+        },
+      });
+      console.log(`✅ Activity log created: ${data.action} ${data.entityType} by ${data.userId}`);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to create activity log:', error);
+      console.error('Data:', JSON.stringify(data, null, 2));
+      throw error;
+    }
   }
 
   // ============================================================================
@@ -181,8 +189,14 @@ export class ActivityLogsService {
     oldValue: any;
     newValue: any;
     metadata?: any;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'UPDATED',
@@ -201,8 +215,14 @@ export class ActivityLogsService {
     oldAssigneeId?: string;
     newAssigneeId: string;
     taskTitle: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'ASSIGNED',
@@ -221,8 +241,14 @@ export class ActivityLogsService {
     userId: string;
     oldAssigneeId: string;
     taskTitle: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'UNASSIGNED',
@@ -240,8 +266,13 @@ export class ActivityLogsService {
     fromBoardId: string;
     toBoardId: string;
     taskTitle: string;
+    workspaceId?: string;
+    projectId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.toBoardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'MOVED',
@@ -257,8 +288,14 @@ export class ActivityLogsService {
     taskId: string;
     userId: string;
     taskTitle: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'COMPLETED',
@@ -272,8 +309,14 @@ export class ActivityLogsService {
     taskId: string;
     userId: string;
     taskTitle: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'REOPENED',
@@ -288,8 +331,14 @@ export class ActivityLogsService {
     userId: string;
     taskTitle: string;
     metadata?: any;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'DELETED',
@@ -310,8 +359,14 @@ export class ActivityLogsService {
     userId: string;
     labelName: string;
     labelColor?: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'ADDED',
@@ -327,8 +382,14 @@ export class ActivityLogsService {
     labelId: string;
     userId: string;
     labelName: string;
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       userId: params.userId,
       action: 'REMOVED',
@@ -618,8 +679,18 @@ export class ActivityLogsService {
 
   /**
    * Get activity feed for a specific user
+   * @param userIdentifier - Can be either Firebase UID or database UUID
    */
-  async getUserActivityFeed(userId: string, limit = 50) {
+  async getUserActivityFeed(userIdentifier: string, limit = 50) {
+    // First, try to find the user by firebase_uid
+    const user = await this.prisma.users.findUnique({
+      where: { firebase_uid: userIdentifier },
+      select: { id: true },
+    });
+
+    // If not found by firebase_uid, assume it's a database UUID
+    const userId = user ? user.id : userIdentifier;
+
     return this.prisma.activity_logs.findMany({
       where: { user_id: userId },
       include: {
@@ -649,7 +720,7 @@ export class ActivityLogsService {
   }) {
     const limit = params.limit ?? 50;
 
-    const where: any = {};
+    const where: Prisma.activity_logsWhereInput = {};
     if (params.workspaceId) where.workspace_id = params.workspaceId;
     if (params.projectId) where.project_id = params.projectId;
     if (params.taskId) where.task_id = params.taskId;
