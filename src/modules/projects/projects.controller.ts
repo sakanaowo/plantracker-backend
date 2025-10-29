@@ -6,12 +6,16 @@ import {
   Get,
   Patch,
   Param,
+  UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
+import { CurrentUser } from '../../auth/current-user.decorator';
 
 @Controller('projects')
+@UseGuards(CombinedAuthGuard)
 export class ProjectsController {
   constructor(private readonly svc: ProjectsService) {}
   @Get()
@@ -20,12 +24,16 @@ export class ProjectsController {
   }
 
   @Post()
-  create(@Body() dto: CreateProjectDto) {
-    return this.svc.create(dto);
+  create(@Body() dto: CreateProjectDto, @CurrentUser('id') userId: string) {
+    return this.svc.create(dto, userId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
-    return this.svc.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProjectDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.update(id, dto, userId);
   }
 }

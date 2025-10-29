@@ -211,7 +211,6 @@ export class WorkspacesService {
           },
         },
         projects: true,
-        labels: true,
       },
     });
     if (!ws) throw new NotFoundException('Workspace not found');
@@ -267,12 +266,18 @@ export class WorkspacesService {
           role: dto.role,
         },
       });
-    } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if (error?.code === 'P2002')
+    } catch (error: unknown) {
+      // Check for Prisma unique constraint violation
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException(
           'User is already a member of the workspace',
         );
+      }
       throw error;
     }
   }

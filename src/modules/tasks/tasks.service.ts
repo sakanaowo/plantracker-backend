@@ -6,13 +6,43 @@ import {
 import { Prisma, tasks, task_comments } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly activityLogsService: ActivityLogsService,
   ) {}
+
+  /**
+   * Helper to get workspace/project/board context for a task
+   */
+  private async getTaskContext(taskId: string) {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+      include: {
+        projects: {
+          select: {
+            id: true,
+            workspace_id: true,
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    return {
+      workspaceId: task?.projects?.workspace_id,
+      projectId: task?.project_id,
+      boardId: task?.board_id,
+    };
+  }
 
   listByBoard(boardId: string): Promise<tasks[]> {
     return this.prisma.tasks.findMany({
@@ -33,6 +63,10 @@ export class TasksService {
     title: string;
     assigneeId?: string;
     createdBy?: string;
+    checklists?: Array<{
+      title: string;
+      items: string[];
+    }>;
   }): Promise<tasks> {
     const last = await this.prisma.tasks.findFirst({
       where: { board_id: dto.boardId, deleted_at: null },
@@ -43,22 +77,28 @@ export class TasksService {
       ? new Prisma.Decimal(last.position).plus(1024)
       : new Prisma.Decimal(1024);
 
+    // Auto-assign: If no assignee specified, assign to creator
+    const finalAssigneeId = dto.assigneeId ?? dto.createdBy ?? null;
+
     const task = await this.prisma.tasks.create({
       data: {
         project_id: dto.projectId,
         board_id: dto.boardId,
         title: dto.title,
-        assignee_id: dto.assigneeId ?? null,
+        assignee_id: finalAssigneeId,
         created_by: dto.createdBy ?? null,
         position: nextPos,
       },
     });
 
-    if (dto.assigneeId && dto.assigneeId !== dto.createdBy) {
-      const project = await this.prisma.projects.findUnique({
-        where: { id: dto.projectId },
-        select: { name: true },
-      });
+    // Get project with workspace_id for activity logging
+    const project = await this.prisma.projects.findUnique({
+      where: { id: dto.projectId },
+      select: { name: true, workspace_id: true },
+    });
+
+    // Send notification if someone else is assigned (not self-assign)
+    if (finalAssigneeId && finalAssigneeId !== dto.createdBy) {
       let assignedByName = 'Hệ thống';
 
       if (dto.createdBy) {
@@ -73,10 +113,59 @@ export class TasksService {
         taskId: task.id,
         taskTitle: task.title,
         projectName: project?.name ?? 'Project',
-        assigneeId: dto.assigneeId,
+        assigneeId: finalAssigneeId,
         assignedBy: dto.createdBy ?? 'system',
         assignedByName,
       });
+    }
+
+    // Log task creation
+    if (project?.workspace_id) {
+      await this.activityLogsService.logTaskCreated({
+        taskId: task.id,
+        userId: dto.createdBy ?? 'system',
+        workspaceId: project.workspace_id,
+        projectId: dto.projectId,
+        boardId: dto.boardId,
+        taskTitle: task.title,
+      });
+
+      // Log task assignment (including auto-assign)
+      if (finalAssigneeId && dto.createdBy) {
+        await this.activityLogsService.logTaskAssigned({
+          taskId: task.id,
+          userId: dto.createdBy,
+          newAssigneeId: finalAssigneeId,
+          taskTitle: task.title,
+          workspaceId: project.workspace_id,
+          projectId: dto.projectId,
+          boardId: dto.boardId,
+        });
+      }
+    }
+
+    // Create checklists if provided
+    if (dto.checklists && dto.checklists.length > 0) {
+      for (const checklistData of dto.checklists) {
+        const checklist = await this.prisma.checklists.create({
+          data: {
+            task_id: task.id,
+            title: checklistData.title,
+          },
+        });
+
+        // Create checklist items
+        if (checklistData.items && checklistData.items.length > 0) {
+          await this.prisma.checklist_items.createMany({
+            data: checklistData.items.map((content, index) => ({
+              checklist_id: checklist.id,
+              content,
+              position: new Prisma.Decimal((index + 1) * 1024),
+              is_done: false,
+            })),
+          });
+        }
+      }
     }
 
     return task;
@@ -117,6 +206,40 @@ export class TasksService {
       },
     });
 
+    // Log task update
+    if (dto.updatedBy) {
+      const changes: Record<string, { old: string | null; new: string }> = {};
+      if (dto.title !== undefined && dto.title !== currentTask.title) {
+        changes.title = { old: currentTask.title, new: dto.title };
+      }
+      if (
+        dto.description !== undefined &&
+        dto.description !== currentTask.description
+      ) {
+        changes.description = {
+          old: currentTask.description,
+          new: dto.description,
+        };
+      }
+
+      if (Object.keys(changes).length > 0) {
+        const context = await this.getTaskContext(id);
+        await this.activityLogsService.logTaskUpdated({
+          taskId: id,
+          userId: dto.updatedBy,
+          taskTitle: updatedTask.title,
+          oldValue: Object.fromEntries(
+            Object.entries(changes).map(([k, v]) => [k, v.old]),
+          ),
+          newValue: Object.fromEntries(
+            Object.entries(changes).map(([k, v]) => [k, v.new]),
+          ),
+          ...context,
+        });
+      }
+    }
+
+    // Handle assignment changes
     if (
       dto.assigneeId &&
       dto.assigneeId !== currentTask.assignee_id &&
@@ -137,6 +260,45 @@ export class TasksService {
         assignedBy: dto.updatedBy ?? 'system',
         assignedByName: assigner?.name ?? 'Hệ thống',
       });
+
+      // Log assignment change
+      if (dto.updatedBy) {
+        const context = await this.getTaskContext(id);
+        if (currentTask.assignee_id) {
+          // Re-assignment
+          await this.activityLogsService.logTaskAssigned({
+            taskId: id,
+            userId: dto.updatedBy,
+            oldAssigneeId: currentTask.assignee_id,
+            newAssigneeId: dto.assigneeId,
+            taskTitle: updatedTask.title,
+            ...context,
+          });
+        } else {
+          // Initial assignment
+          await this.activityLogsService.logTaskAssigned({
+            taskId: id,
+            userId: dto.updatedBy,
+            newAssigneeId: dto.assigneeId,
+            taskTitle: updatedTask.title,
+            ...context,
+          });
+        }
+      }
+    } else if (
+      dto.assigneeId === null &&
+      currentTask.assignee_id &&
+      dto.updatedBy
+    ) {
+      // Unassignment
+      const context = await this.getTaskContext(id);
+      await this.activityLogsService.logTaskUnassigned({
+        taskId: id,
+        userId: dto.updatedBy,
+        oldAssigneeId: currentTask.assignee_id,
+        taskTitle: updatedTask.title,
+        ...context,
+      });
     }
 
     return updatedTask;
@@ -148,7 +310,14 @@ export class TasksService {
     toBoardId: string,
     beforeId?: string,
     afterId?: string,
+    movedBy?: string,
   ): Promise<tasks> {
+    // Get current task info before moving
+    const currentTask = await this.prisma.tasks.findUnique({
+      where: { id },
+      select: { board_id: true, title: true },
+    });
+
     let position = new Prisma.Decimal(1024);
 
     if (beforeId || afterId) {
@@ -187,18 +356,52 @@ export class TasksService {
         : new Prisma.Decimal(1024);
     }
 
-    return this.prisma.tasks.update({
+    const updatedTask = await this.prisma.tasks.update({
       where: { id },
       data: { board_id: toBoardId, position },
     });
+
+    // Log task move if board changed
+    if (movedBy && currentTask && currentTask.board_id !== toBoardId) {
+      const context = await this.getTaskContext(id);
+      await this.activityLogsService.logTaskMoved({
+        taskId: id,
+        userId: movedBy,
+        fromBoardId: currentTask.board_id,
+        toBoardId: toBoardId,
+        taskTitle: currentTask.title,
+        workspaceId: context.workspaceId,
+        projectId: context.projectId,
+      });
+    }
+
+    return updatedTask;
   }
 
   // soft delete (nếu DB có cột deleted_at)
-  softDelete(id: string): Promise<tasks> {
-    return this.prisma.tasks.update({
+  async softDelete(id: string, deletedBy?: string): Promise<tasks> {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id },
+      select: { title: true },
+    });
+
+    const deletedTask = await this.prisma.tasks.update({
       where: { id },
       data: { deleted_at: new Date() },
     });
+
+    // Log task deletion
+    if (deletedBy && task) {
+      const context = await this.getTaskContext(id);
+      await this.activityLogsService.logTaskDeleted({
+        taskId: id,
+        userId: deletedBy,
+        taskTitle: task.title,
+        ...context,
+      });
+    }
+
+    return deletedTask;
   }
 
   async createQuickTask(

@@ -1,10 +1,13 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { Message } from 'firebase-admin/messaging';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class FcmService implements OnModuleInit {
   private readonly logger = new Logger(FcmService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
 
   onModuleInit() {
     try {
@@ -27,8 +30,45 @@ export class FcmService implements OnModuleInit {
   /**
    * Gửi notification với cấu hình đầy đủ
    */
-  async sendNotification(message: Message): Promise<string> {
+  async sendNotification(
+    message:
+      | Message
+      | {
+          userId: string;
+          notification: { title: string; body: string };
+          data: Record<string, string>;
+        },
+  ): Promise<string> {
     try {
+      // If message contains userId, fetch FCM token first
+      if ('userId' in message) {
+        const user = await this.getUserFcmToken(message.userId);
+        if (!user?.fcmToken) {
+          this.logger.warn(
+            `User ${message.userId} does not have FCM token registered`,
+          );
+          return 'NO_FCM_TOKEN';
+        }
+
+        const fcmMessage: Message = {
+          token: user.fcmToken,
+          notification: message.notification,
+          data: message.data || {},
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'plantracker_notifications',
+            },
+          },
+        };
+
+        const response = await admin.messaging().send(fcmMessage);
+        this.logger.log(`Successfully sent notification: ${response}`);
+        return response;
+      }
+
+      // Standard Message object
       const response = await admin.messaging().send(message);
       this.logger.log(`Successfully sent notification: ${response}`);
       return response;
@@ -36,6 +76,21 @@ export class FcmService implements OnModuleInit {
       this.logger.error('Error sending notification', error);
       throw error;
     }
+  }
+
+  private async getUserFcmToken(
+    userId: string,
+  ): Promise<{ fcmToken: string | null } | null> {
+    const device = await this.prisma.user_devices.findFirst({
+      where: {
+        user_id: userId,
+        fcm_token: { not: '' },
+      },
+      select: { fcm_token: true },
+      orderBy: { last_active_at: 'desc' },
+    });
+
+    return device ? { fcmToken: device.fcm_token } : null;
   }
 
   /**

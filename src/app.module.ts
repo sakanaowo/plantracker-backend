@@ -13,6 +13,12 @@ import { TimerModule } from './modules/timers/timer.module';
 import { FcmModule } from './modules/fcm/fcm.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { WorkerModule } from './modules/worker/worker.module';
+import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
+import { LabelsModule } from './modules/labels/labels.module';
+import { CommentsModule } from './modules/comments/comments.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { ProjectMembersModule } from './modules/project-members/project-members.module';
+import { ChecklistsModule } from './modules/checklists/checklists.module';
 
 @Module({
   imports: [
@@ -28,6 +34,12 @@ import { WorkerModule } from './modules/worker/worker.module';
     FcmModule,
     NotificationsModule,
     WorkerModule,
+    ActivityLogsModule,
+    LabelsModule,
+    CommentsModule,
+    AttachmentsModule,
+    ProjectMembersModule,
+    ChecklistsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

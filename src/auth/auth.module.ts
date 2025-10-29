@@ -16,6 +16,6 @@ import { UsersModule } from 'src/modules/users/users.module';
       useClass: CombinedAuthGuard,
     },
   ],
-  exports: [CombinedAuthGuard],
+  exports: [CombinedAuthGuard, UsersModule],
 })
 export class AuthModule {}
