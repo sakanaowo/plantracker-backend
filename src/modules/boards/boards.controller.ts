@@ -8,13 +8,17 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { BoardsService } from './boards.service';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { boards } from '@prisma/client';
+import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
+import { CurrentUser } from '../../auth/current-user.decorator';
 
 @Controller('boards')
+@UseGuards(CombinedAuthGuard)
 export class BoardsController {
   constructor(private readonly svc: BoardsService) {}
   @Get()
@@ -22,8 +26,11 @@ export class BoardsController {
     return this.svc.listByProject(projectId);
   }
   @Post()
-  create(@Body() dto: CreateBoardDto): Promise<boards> {
-    return this.svc.create(dto);
+  create(
+    @Body() dto: CreateBoardDto,
+    @CurrentUser('id') userId: string,
+  ): Promise<boards> {
+    return this.svc.create(dto, userId);
   }
 
   @Patch(':id')
