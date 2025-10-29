@@ -15,9 +15,7 @@ import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 @UseGuards(CombinedAuthGuard)
 @ApiBearerAuth()
 export class ActivityLogsController {
-  constructor(
-    private readonly activityLogsService: ActivityLogsService,
-  ) {}
+  constructor(private readonly activityLogsService: ActivityLogsService) {}
 
   /**
    * GET /activity-logs/workspace/:workspaceId
