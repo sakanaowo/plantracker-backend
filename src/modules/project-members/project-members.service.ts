@@ -101,7 +101,7 @@ export class ProjectMembersService {
     }
 
     // Check if already member
-    const existing = await this.prisma.project_members.findUnique({
+    const existingMember = await this.prisma.project_members.findUnique({
       where: {
         project_id_user_id: {
           project_id: projectId,
@@ -110,8 +110,28 @@ export class ProjectMembersService {
       },
     });
 
-    if (existing) {
+    if (existingMember) {
       throw new ConflictException('User is already a project member');
+    }
+
+    // Check if already has pending invitation
+    const existingInvitation = await this.prisma.project_invitations.findUnique({
+      where: {
+        project_id_user_id: {
+          project_id: projectId,
+          user_id: user.id,
+        },
+      },
+    });
+
+    if (existingInvitation) {
+      if (existingInvitation.status === 'PENDING' && existingInvitation.expires_at > new Date()) {
+        throw new ConflictException('User already has a pending invitation');
+      }
+      // If invitation expired or was declined, delete it and create new one
+      await this.prisma.project_invitations.delete({
+        where: { id: existingInvitation.id },
+      });
     }
 
     // Create invitation instead of direct member
