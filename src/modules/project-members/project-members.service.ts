@@ -43,13 +43,53 @@ export class ProjectMembersService {
       throw new NotFoundException('Project not found');
     }
 
-    // Check project is TEAM type
-    if (project.type !== 'TEAM') {
-      throw new BadRequestException('Can only invite members to TEAM projects');
-    }
+    // Auto-convert PERSONAL to TEAM if needed
+    if (project.type === 'PERSONAL') {
+      // Check if user is workspace owner (required for conversion)
+      const workspace = await this.prisma.workspaces.findUnique({
+        where: { id: project.workspace_id },
+        include: {
+          memberships: {
+            where: { user_id: invitedBy },
+          },
+        },
+      });
 
-    // Check permission (must be OWNER or ADMIN)
-    await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
+      const membership = workspace?.memberships[0];
+      if (!membership || membership.role !== 'OWNER') {
+        throw new ForbiddenException(
+          'Only workspace owner can invite members to PERSONAL projects. Convert to TEAM project first.',
+        );
+      }
+
+      // Auto-convert to TEAM
+      await this.prisma.projects.update({
+        where: { id: projectId },
+        data: { type: 'TEAM' },
+      });
+
+      // Add workspace owner as project OWNER member
+      await this.prisma.project_members.create({
+        data: {
+          project_id: projectId,
+          user_id: invitedBy, // The workspace owner becomes project owner
+          role: 'OWNER',
+          added_by: invitedBy,
+        },
+      });
+
+      // Log conversion activity
+      await this.activityLogsService.logProjectUpdated({
+        projectId,
+        userId: invitedBy,
+        projectName: project.name,
+        oldValue: { type: 'PERSONAL' },
+        newValue: { type: 'TEAM' },
+      });
+    } else {
+      // For TEAM projects, check permission (must be OWNER or ADMIN)
+      await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
+    }
 
     // Find user by email
     const user = await this.prisma.users.findUnique({
