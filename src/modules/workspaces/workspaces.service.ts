@@ -210,12 +210,25 @@ export class WorkspacesService {
     ]);
 
     // Deduplicate workspaces and add isOwner flag
+    // Process in order: asMember, viaProjects, then asOwner (so owner flag takes priority)
     const map = new Map<string, any>();
-    [...asMember, ...asOwner, ...viaProjects].forEach((w) => {
+
+    // First add all workspaces with their owner flag
+    [...asMember, ...viaProjects, ...asOwner].forEach((w) => {
+      const isOwner = w.owner_id === userId;
+
       if (!map.has(w.id)) {
+        // First time seeing this workspace
         map.set(w.id, {
           ...w,
-          is_owner: w.owner_id === userId,
+          is_owner: isOwner,
+        });
+      } else if (isOwner) {
+        // Already exists but user is owner, update the flag
+        const existing = map.get(w.id);
+        map.set(w.id, {
+          ...existing,
+          is_owner: true,
         });
       }
     });
