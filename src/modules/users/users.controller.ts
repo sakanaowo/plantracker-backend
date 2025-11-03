@@ -77,6 +77,14 @@ export class UsersController {
     return this.users.getById(userId);
   }
 
+  @Get(':id')
+  @ApiBearerAuth()
+  @UseGuards(CombinedAuthGuard)
+  @ApiOperation({ summary: 'Get user by ID' })
+  getUserById(@Param('id') userId: string) {
+    return this.users.getById(userId);
+  }
+
   @Put('me')
   @ApiBearerAuth()
   @UseGuards(CombinedAuthGuard)

@@ -240,25 +240,46 @@ model project_members {
   @@index([user_id], map: "idx_project_members_user")
 }
 
+model project_invitations {
+  id         String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id String            @db.Uuid
+  user_id    String            @db.Uuid
+  role       project_role      @default(MEMBER)
+  status     invitation_status @default(PENDING)
+  invited_by String            @db.Uuid
+  expires_at DateTime          @db.Timestamptz(6)
+  created_at DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at DateTime          @default(now()) @db.Timestamptz(6)
+  projects   projects          @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users             @relation("InviteeInvitations", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  inviter    users             @relation("InviterInvitations", fields: [invited_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, user_id])
+  @@index([user_id], map: "idx_project_invitations_user")
+  @@index([status], map: "idx_project_invitations_status")
+  @@index([expires_at], map: "idx_project_invitations_expires")
+}
+
 model projects {
-  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspace_id    String            @db.Uuid
-  name            String
-  description     String?
-  key             String?           @db.VarChar(10)
-  issue_seq       Int               @default(0)
-  board_type      String            @default("KANBAN") @db.VarChar(10)
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
-  type            project_type      @default(PERSONAL)
-  activity_logs   activity_logs[]
-  boards          boards[]
-  events          events[]
-  labels          labels[]
-  project_members project_members[]
-  workspaces      workspaces        @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sprints         sprints[]
-  tasks           tasks[]
+  id                  String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id        String                @db.Uuid
+  name                String
+  description         String?
+  key                 String?               @db.VarChar(10)
+  issue_seq           Int                   @default(0)
+  board_type          String                @default("KANBAN") @db.VarChar(10)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  type                project_type          @default(PERSONAL)
+  activity_logs       activity_logs[]
+  boards              boards[]
+  events              events[]
+  labels              labels[]
+  project_members     project_members[]
+  project_invitations project_invitations[]
+  workspaces          workspaces            @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sprints             sprints[]
+  tasks               tasks[]
 
   @@unique([workspace_id, key])
   @@index([workspace_id])
@@ -379,14 +400,14 @@ model user_devices {
 }
 
 model users {
-  id                             String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id                             String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name                           String
-  email                          String               @unique
+  email                          String                @unique
   password_hash                  String
   avatar_url                     String?
-  firebase_uid                   String               @unique
-  created_at                     DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at                     DateTime             @default(now()) @db.Timestamptz(6)
+  firebase_uid                   String                @unique
+  created_at                     DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime              @default(now()) @db.Timestamptz(6)
   activity_logs                  activity_logs[]
   events                         events[]
   integration_tokens             integration_tokens[]
@@ -394,9 +415,11 @@ model users {
   notifications                  notifications[]
   participants                   participants[]
   project_members                project_members[]
+  project_invitations_invitee    project_invitations[] @relation("InviteeInvitations")
+  project_invitations_inviter    project_invitations[] @relation("InviterInvitations")
   task_comments                  task_comments[]
-  tasks_tasks_assignee_idTousers tasks[]              @relation("tasks_assignee_idTousers")
-  tasks_tasks_created_byTousers  tasks[]              @relation("tasks_created_byTousers")
+  tasks_tasks_assignee_idTousers tasks[]               @relation("tasks_assignee_idTousers")
+  tasks_tasks_created_byTousers  tasks[]               @relation("tasks_created_byTousers")
   time_entries                   time_entries[]
   user_devices                   user_devices[]
   watchers                       watchers[]
@@ -550,6 +573,13 @@ enum project_role {
   ADMIN
   MEMBER
   VIEWER
+}
+
+enum invitation_status {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
 }
 
 enum provider {
