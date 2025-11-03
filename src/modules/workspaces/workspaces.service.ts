@@ -209,9 +209,17 @@ export class WorkspacesService {
       }),
     ]);
 
-    // Deduplicate workspaces
-    const map = new Map<string, (typeof asMember)[0]>();
-    [...asMember, ...asOwner, ...viaProjects].forEach((w) => map.set(w.id, w));
+    // Deduplicate workspaces and add isOwner flag
+    const map = new Map<string, any>();
+    [...asMember, ...asOwner, ...viaProjects].forEach((w) => {
+      if (!map.has(w.id)) {
+        map.set(w.id, {
+          ...w,
+          is_owner: w.owner_id === userId,
+        });
+      }
+    });
+
     return Array.from(map.values());
   }
 

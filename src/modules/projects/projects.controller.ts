@@ -19,8 +19,11 @@ import { CurrentUser } from '../../auth/current-user.decorator';
 export class ProjectsController {
   constructor(private readonly svc: ProjectsService) {}
   @Get()
-  list(@Query('workspaceId') workspaceId: string) {
-    return this.svc.listByWorkSpace(workspaceId);
+  list(
+    @Query('workspaceId') workspaceId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.listByWorkSpace(workspaceId, userId);
   }
 
   @Post()

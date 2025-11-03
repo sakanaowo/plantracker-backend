@@ -12,9 +12,24 @@ export class ProjectsService {
     private activityLogsService: ActivityLogsService,
   ) {}
 
-  listByWorkSpace(workspaceId: string): Promise<projects[]> {
+  listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
+    // Only return projects from workspaces where user is owner or member
     return this.prisma.projects.findMany({
-      where: { workspace_id: workspaceId },
+      where: {
+        workspace_id: workspaceId,
+        workspaces: {
+          OR: [
+            { owner_id: userId },
+            {
+              memberships: {
+                some: {
+                  user_id: userId,
+                },
+              },
+            },
+          ],
+        },
+      },
       orderBy: { created_at: 'desc' },
     });
   }
