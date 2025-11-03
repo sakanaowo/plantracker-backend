@@ -70,3 +70,27 @@ export class ProjectMembersController {
     return this.projectMembersService.convertToTeam(projectId, userId, dto);
   }
 }
+
+@Controller('invitations')
+@UseGuards(CombinedAuthGuard)
+export class InvitationsController {
+  constructor(private readonly projectMembersService: ProjectMembersService) {}
+
+  @Get('my')
+  async getMyInvitations(@CurrentUser('sub') userId: string) {
+    return this.projectMembersService.getUserInvitations(userId);
+  }
+
+  @Post(':invitationId/respond')
+  async respondToInvitation(
+    @Param('invitationId') invitationId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: { action: 'accept' | 'decline' },
+  ) {
+    return this.projectMembersService.respondToInvitation(
+      invitationId,
+      userId,
+      dto.action,
+    );
+  }
+}

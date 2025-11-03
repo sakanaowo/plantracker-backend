@@ -148,6 +148,7 @@ export class NotificationsService {
     invitedBy: string;
     invitedByName: string;
     role: string;
+    invitationId: string;
   }): Promise<void> {
     try {
       const message = `${data.invitedByName} đã mời bạn tham gia project "${data.projectName}" với vai trò ${data.role}`;
@@ -206,7 +207,12 @@ export class NotificationsService {
             invitedBy: data.invitedBy,
             invitedByName: data.invitedByName,
             role: data.role,
+            invitationId: data.invitationId, // Thêm invitation ID
             deeplink: `/projects/${data.projectId}`,
+            // Action buttons data
+            hasActions: 'true',
+            actionAccept: 'accept',
+            actionDecline: 'decline',
           },
         });
 

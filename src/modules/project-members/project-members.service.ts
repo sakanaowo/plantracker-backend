@@ -43,13 +43,53 @@ export class ProjectMembersService {
       throw new NotFoundException('Project not found');
     }
 
-    // Check project is TEAM type
-    if (project.type !== 'TEAM') {
-      throw new BadRequestException('Can only invite members to TEAM projects');
-    }
+    // Auto-convert PERSONAL to TEAM if needed
+    if (project.type === 'PERSONAL') {
+      // Check if user is workspace owner (required for conversion)
+      const workspace = await this.prisma.workspaces.findUnique({
+        where: { id: project.workspace_id },
+        include: {
+          memberships: {
+            where: { user_id: invitedBy },
+          },
+        },
+      });
 
-    // Check permission (must be OWNER or ADMIN)
-    await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
+      const membership = workspace?.memberships[0];
+      if (!membership || membership.role !== 'OWNER') {
+        throw new ForbiddenException(
+          'Only workspace owner can invite members to PERSONAL projects. Convert to TEAM project first.',
+        );
+      }
+
+      // Auto-convert to TEAM
+      await this.prisma.projects.update({
+        where: { id: projectId },
+        data: { type: 'TEAM' },
+      });
+
+      // Add workspace owner as project OWNER member
+      await this.prisma.project_members.create({
+        data: {
+          project_id: projectId,
+          user_id: invitedBy, // The workspace owner becomes project owner
+          role: 'OWNER',
+          added_by: invitedBy,
+        },
+      });
+
+      // Log conversion activity
+      await this.activityLogsService.logProjectUpdated({
+        projectId,
+        userId: invitedBy,
+        projectName: project.name,
+        oldValue: { type: 'PERSONAL' },
+        newValue: { type: 'TEAM' },
+      });
+    } else {
+      // For TEAM projects, check permission (must be OWNER or ADMIN)
+      await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
+    }
 
     // Find user by email
     const user = await this.prisma.users.findUnique({
@@ -61,7 +101,7 @@ export class ProjectMembersService {
     }
 
     // Check if already member
-    const existing = await this.prisma.project_members.findUnique({
+    const existingMember = await this.prisma.project_members.findUnique({
       where: {
         project_id_user_id: {
           project_id: projectId,
@@ -70,17 +110,41 @@ export class ProjectMembersService {
       },
     });
 
-    if (existing) {
+    if (existingMember) {
       throw new ConflictException('User is already a project member');
     }
 
-    // Add member
-    const member = await this.prisma.project_members.create({
+    // Check if already has pending invitation
+    const existingInvitation = await this.prisma.project_invitations.findUnique({
+      where: {
+        project_id_user_id: {
+          project_id: projectId,
+          user_id: user.id,
+        },
+      },
+    });
+
+    if (existingInvitation) {
+      if (existingInvitation.status === 'PENDING' && existingInvitation.expires_at > new Date()) {
+        throw new ConflictException('User already has a pending invitation');
+      }
+      // If invitation expired or was declined, delete it and create new one
+      await this.prisma.project_invitations.delete({
+        where: { id: existingInvitation.id },
+      });
+    }
+
+    // Create invitation instead of direct member
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days to accept
+
+    const invitation = await this.prisma.project_invitations.create({
       data: {
         project_id: projectId,
         user_id: user.id,
         role: dto.role ?? 'MEMBER',
-        added_by: invitedBy,
+        invited_by: invitedBy,
+        expires_at: expiresAt,
       },
       include: {
         users: {
@@ -91,6 +155,12 @@ export class ProjectMembersService {
             avatar_url: true,
           },
         },
+        projects: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -98,11 +168,12 @@ export class ProjectMembersService {
     await this.activityLogsService.logMemberAdded({
       projectId,
       userId: invitedBy,
-      memberId: member.id,
+      memberId: invitation.id,
       memberName: user.name,
       role: dto.role ?? 'MEMBER',
       metadata: {
         email: user.email,
+        type: 'INVITATION_SENT',
       },
     });
 
@@ -119,9 +190,10 @@ export class ProjectMembersService {
       invitedBy,
       invitedByName: inviter?.name ?? 'Hệ thống',
       role: dto.role ?? 'MEMBER',
+      invitationId: invitation.id,
     });
 
-    return member;
+    return invitation;
   }
 
   /**
@@ -276,6 +348,145 @@ export class ProjectMembersService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * Get user's pending invitations
+   */
+  async getUserInvitations(userId: string) {
+    const invitations = await this.prisma.project_invitations.findMany({
+      where: {
+        user_id: userId,
+        status: 'PENDING',
+        expires_at: {
+          gt: new Date(), // Not expired
+        },
+      },
+      include: {
+        projects: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    return invitations;
+  }
+
+  /**
+   * Respond to project invitation
+   */
+  async respondToInvitation(
+    invitationId: string,
+    userId: string,
+    action: 'accept' | 'decline',
+  ) {
+    // Get invitation
+    const invitation = await this.prisma.project_invitations.findUnique({
+      where: { id: invitationId },
+      include: {
+        projects: true,
+        users: true,
+        inviter: true,
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    // Check if invitation belongs to user
+    if (invitation.user_id !== userId) {
+      throw new ForbiddenException('This invitation is not for you');
+    }
+
+    // Check if invitation is still pending
+    if (invitation.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Invitation has already been ${invitation.status.toLowerCase()}`,
+      );
+    }
+
+    // Check if invitation is expired
+    if (invitation.expires_at < new Date()) {
+      throw new BadRequestException('Invitation has expired');
+    }
+
+    const updatedStatus = action === 'accept' ? 'ACCEPTED' : 'DECLINED';
+
+    // Update invitation status
+    const updatedInvitation = await this.prisma.project_invitations.update({
+      where: { id: invitationId },
+      data: {
+        status: updatedStatus,
+        updated_at: new Date(),
+      },
+    });
+
+    // If accepted, add user as project member
+    if (action === 'accept') {
+      // Check if already a member (safety check)
+      const existingMember = await this.prisma.project_members.findUnique({
+        where: {
+          project_id_user_id: {
+            project_id: invitation.project_id,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (!existingMember) {
+        await this.prisma.project_members.create({
+          data: {
+            project_id: invitation.project_id,
+            user_id: userId,
+            role: invitation.role,
+            added_by: invitation.invited_by,
+          },
+        });
+      }
+
+      // Log member added
+      await this.activityLogsService.logMemberAdded({
+        projectId: invitation.project_id,
+        userId: invitation.invited_by,
+        memberId: userId,
+        memberName: invitation.users.name,
+        role: invitation.role,
+        metadata: {
+          type: 'INVITATION_ACCEPTED',
+        },
+      });
+    } else {
+      // Log invitation declined
+      await this.activityLogsService.logMemberRemoved({
+        projectId: invitation.project_id,
+        userId: invitation.invited_by,
+        memberId: userId,
+        memberName: invitation.users.name,
+        role: invitation.role,
+      });
+    }
+
+    return {
+      invitation: updatedInvitation,
+      action,
+      message: `Invitation ${action}ed successfully`,
+    };
   }
 
   /**
