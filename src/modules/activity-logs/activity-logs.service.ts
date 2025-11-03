@@ -44,7 +44,9 @@ export class ActivityLogsService {
           metadata: data.metadata ?? null,
         },
       });
-      console.log(`✅ Activity log created: ${data.action} ${data.entityType} by ${data.userId}`);
+      console.log(
+        `✅ Activity log created: ${data.action} ${data.entityType} by ${data.userId}`,
+      );
       return result;
     } catch (error) {
       console.error('❌ Failed to create activity log:', error);
@@ -685,14 +687,36 @@ export class ActivityLogsService {
     // First, try to find the user by firebase_uid
     const user = await this.prisma.users.findUnique({
       where: { firebase_uid: userIdentifier },
-      select: { id: true },
+      select: { id: true, email: true },
     });
 
     // If not found by firebase_uid, assume it's a database UUID
     const userId = user ? user.id : userIdentifier;
+    const userEmail = user?.email;
+
+    console.log(
+      `📋 Getting activity feed for user: ${userId} (email: ${userEmail})`,
+    );
 
     return this.prisma.activity_logs.findMany({
-      where: { user_id: userId },
+      where: {
+        OR: [
+          // Logs where user is the actor (performed the action)
+          { user_id: userId },
+          // Logs where user is affected (e.g., invitations sent to this user)
+          ...(userEmail
+            ? [
+                {
+                  entity_type: 'MEMBERSHIP' as const,
+                  metadata: {
+                    path: ['email'],
+                    equals: userEmail,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
       include: {
         users: {
           select: {

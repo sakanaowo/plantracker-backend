@@ -612,18 +612,17 @@ export class ProjectMembersService {
 
   /**
    * Helper: Validate user has access to project
+   *
+   * Logic:
+   * - User must be in project_members to access ANY project (PERSONAL or TEAM)
+   * - Workspace memberships are for workspace-level access, not project-level
+   * - Project owner always has access (checked separately if needed)
    */
   private async validateProjectAccess(projectId: string, userId: string) {
     const project = await this.prisma.projects.findUnique({
       where: { id: projectId },
       include: {
-        workspaces: {
-          include: {
-            memberships: {
-              where: { user_id: userId },
-            },
-          },
-        },
+        workspaces: true,
         project_members: {
           where: { user_id: userId },
         },
@@ -634,17 +633,12 @@ export class ProjectMembersService {
       throw new NotFoundException('Project not found');
     }
 
-    // For PERSONAL projects: check workspace membership
-    if (project.type === 'PERSONAL') {
-      if (project.workspaces.memberships.length === 0) {
-        throw new ForbiddenException('Access denied to this project');
-      }
-    }
-    // For TEAM projects: check project membership
-    else {
-      if (project.project_members.length === 0) {
-        throw new ForbiddenException('Access denied to this project');
-      }
+    // Check if user is project member OR workspace owner
+    const isProjectMember = project.project_members.length > 0;
+    const isWorkspaceOwner = project.workspaces.owner_id === userId;
+
+    if (!isProjectMember && !isWorkspaceOwner) {
+      throw new ForbiddenException('Access denied to this project');
     }
 
     return project;
