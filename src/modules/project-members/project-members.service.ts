@@ -29,6 +29,11 @@ export class ProjectMembersService {
     invitedBy: string,
     dto: InviteMemberDto,
   ) {
+    console.log('=== INVITE MEMBER START ===');
+    console.log('Project ID:', projectId);
+    console.log('Invited by:', invitedBy);
+    console.log('DTO:', dto);
+
     // Get project
     const project = await this.prisma.projects.findUnique({
       where: { id: projectId },
@@ -43,8 +48,15 @@ export class ProjectMembersService {
       throw new NotFoundException('Project not found');
     }
 
+    console.log('Project found:', {
+      id: project.id,
+      name: project.name,
+      type: project.type,
+    });
+
     // Auto-convert PERSONAL to TEAM if needed
     if (project.type === 'PERSONAL') {
+      console.log('⚠️ Project is PERSONAL, attempting auto-convert to TEAM...');
       // Check if user is workspace owner (required for conversion)
       const workspace = await this.prisma.workspaces.findUnique({
         where: { id: project.workspace_id },
@@ -67,6 +79,7 @@ export class ProjectMembersService {
         where: { id: projectId },
         data: { type: 'TEAM' },
       });
+      console.log('✅ Project converted to TEAM');
 
       // Add workspace owner as project OWNER member
       await this.prisma.project_members.create({
@@ -77,6 +90,7 @@ export class ProjectMembersService {
           added_by: invitedBy,
         },
       });
+      console.log('✅ Workspace owner added as project OWNER');
 
       // Log conversion activity
       await this.activityLogsService.logProjectUpdated({
@@ -86,7 +100,9 @@ export class ProjectMembersService {
         oldValue: { type: 'PERSONAL' },
         newValue: { type: 'TEAM' },
       });
+      console.log('✅ Activity log created for conversion');
     } else {
+      console.log('ℹ️ Project is already TEAM type');
       // For TEAM projects, check permission (must be OWNER or ADMIN)
       await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
     }
@@ -97,8 +113,15 @@ export class ProjectMembersService {
     });
 
     if (!user) {
+      console.log('❌ User not found with email:', dto.email);
       throw new NotFoundException(`User not found with email: ${dto.email}`);
     }
+
+    console.log('✅ User found:', {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    });
 
     // Check if already member
     const existingMember = await this.prisma.project_members.findUnique({
@@ -115,17 +138,22 @@ export class ProjectMembersService {
     }
 
     // Check if already has pending invitation
-    const existingInvitation = await this.prisma.project_invitations.findUnique({
-      where: {
-        project_id_user_id: {
-          project_id: projectId,
-          user_id: user.id,
+    const existingInvitation = await this.prisma.project_invitations.findUnique(
+      {
+        where: {
+          project_id_user_id: {
+            project_id: projectId,
+            user_id: user.id,
+          },
         },
       },
-    });
+    );
 
     if (existingInvitation) {
-      if (existingInvitation.status === 'PENDING' && existingInvitation.expires_at > new Date()) {
+      if (
+        existingInvitation.status === 'PENDING' &&
+        existingInvitation.expires_at > new Date()
+      ) {
         throw new ConflictException('User already has a pending invitation');
       }
       // If invitation expired or was declined, delete it and create new one
