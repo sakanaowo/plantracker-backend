@@ -151,6 +151,11 @@ export class NotificationsService {
     invitationId: string;
   }): Promise<void> {
     try {
+      console.log('=== SENDING PROJECT INVITE NOTIFICATION ===');
+      console.log('Invitee ID:', data.inviteeId);
+      console.log('Inviter:', data.invitedByName);
+      console.log('Project:', data.projectName);
+
       const message = `${data.invitedByName} đã mời bạn tham gia project "${data.projectName}" với vai trò ${data.role}`;
       const notificationPayload = {
         id: crypto.randomUUID(),
@@ -170,17 +175,20 @@ export class NotificationsService {
 
       // Check if user is online (WebSocket connected)
       const isOnline = this.notificationsGateway.isUserOnline(data.inviteeId);
+      console.log('User online status:', isOnline);
 
       if (isOnline) {
         // User is online → send via WebSocket (real-time)
         this.logger.log(
           `User ${data.inviteeId} is ONLINE → sending via WebSocket`,
         );
+        console.log('📡 Sending via WebSocket...');
         this.notificationsGateway.emitToUser(
           data.inviteeId,
           'notification',
           notificationPayload,
         );
+        console.log('✅ WebSocket notification sent');
 
         // Log as DELIVERED (WebSocket delivered instantly)
         await this.logNotification({
@@ -190,9 +198,11 @@ export class NotificationsService {
           message,
           status: 'DELIVERED',
         });
+        console.log('✅ Notification logged as DELIVERED');
       } else {
         // User is offline → send via FCM (push notification)
         this.logger.log(`User ${data.inviteeId} is OFFLINE → sending via FCM`);
+        console.log('📱 Sending via FCM (push notification)...');
 
         await this.fcmService.sendNotification({
           userId: data.inviteeId,
@@ -215,6 +225,7 @@ export class NotificationsService {
             actionDecline: 'decline',
           },
         });
+        console.log('✅ FCM notification sent');
 
         // Log as SENT (FCM queued)
         await this.logNotification({
@@ -224,13 +235,16 @@ export class NotificationsService {
           message,
           status: 'SENT',
         });
+        console.log('✅ Notification logged as SENT');
       }
 
       this.logger.log(
         `Project invite notification sent to user ${data.inviteeId}`,
       );
+      console.log('=== NOTIFICATION PROCESS COMPLETE ===');
     } catch (error) {
       this.logger.error('Failed to send project invite notification:', error);
+      console.error('❌ NOTIFICATION ERROR:', error);
     }
   }
 
