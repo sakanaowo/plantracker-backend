@@ -228,8 +228,15 @@ export class ProjectMembersService {
    * List project members
    */
   async listMembers(projectId: string, userId: string) {
+    console.log(
+      `📋 listMembers called - projectId: ${projectId}, userId: ${userId}`,
+    );
+
     // Validate project access
     await this.validateProjectAccess(projectId, userId);
+    console.log(
+      `✅ Access validated for user ${userId} to project ${projectId}`,
+    );
 
     const members = await this.prisma.project_members.findMany({
       where: { project_id: projectId },
@@ -245,6 +252,11 @@ export class ProjectMembersService {
       },
       orderBy: [{ role: 'asc' }, { created_at: 'asc' }],
     });
+
+    console.log(
+      `👥 Found ${members.length} members for project ${projectId}:`,
+      members.map((m) => `${m.users.name} (${m.role})`).join(', '),
+    );
 
     return {
       data: members.map((m) => ({

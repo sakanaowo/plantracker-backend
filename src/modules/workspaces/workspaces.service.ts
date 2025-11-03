@@ -182,19 +182,36 @@ export class WorkspacesService {
   }
 
   async listMine(userId: string) {
-    const [asMember, asOwner] = await Promise.all([
+    // Get workspaces where user is member or owner
+    const [asMember, asOwner, viaProjects] = await Promise.all([
+      // Workspaces where user is explicit member
       this.prisma.workspaces.findMany({
         where: { memberships: { some: { user_id: userId } } },
         orderBy: { created_at: 'desc' },
       }),
+      // Workspaces where user is owner
       this.prisma.workspaces.findMany({
         where: { owner_id: userId },
         orderBy: { created_at: 'desc' },
       }),
+      // Workspaces where user is member of ANY project in that workspace
+      this.prisma.workspaces.findMany({
+        where: {
+          projects: {
+            some: {
+              project_members: {
+                some: { user_id: userId },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      }),
     ]);
 
+    // Deduplicate workspaces
     const map = new Map<string, (typeof asMember)[0]>();
-    [...asMember, ...asOwner].forEach((w) => map.set(w.id, w));
+    [...asMember, ...asOwner, ...viaProjects].forEach((w) => map.set(w.id, w));
     return Array.from(map.values());
   }
 
