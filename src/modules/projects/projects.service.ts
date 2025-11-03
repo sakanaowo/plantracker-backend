@@ -146,6 +146,23 @@ export class ProjectsService {
     return project;
   }
 
+  async getMembers(projectId: string) {
+    return this.prisma.project_members.findMany({
+      where: { project_id: projectId },
+      include: {
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
   async update(
     id: string,
     dto: UpdateProjectDto,

@@ -26,6 +26,11 @@ export class ProjectsController {
     return this.svc.listByWorkSpace(workspaceId, userId);
   }
 
+  @Get(':id/members')
+  getMembers(@Param('id') projectId: string) {
+    return this.svc.getMembers(projectId);
+  }
+
   @Post()
   create(@Body() dto: CreateProjectDto, @CurrentUser('id') userId: string) {
     return this.svc.create(dto, userId);
