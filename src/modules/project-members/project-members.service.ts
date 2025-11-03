@@ -192,18 +192,8 @@ export class ProjectMembersService {
       },
     });
 
-    // Log activity
-    await this.activityLogsService.logMemberAdded({
-      projectId,
-      userId: invitedBy,
-      memberId: invitation.id,
-      memberName: user.name,
-      role: dto.role ?? 'MEMBER',
-      metadata: {
-        email: user.email,
-        type: 'INVITATION_SENT',
-      },
-    });
+    // Don't log activity here - will be logged when invitation is accepted
+    // This prevents duplicate logs in activity feed
 
     // Send notification to invited user
     const inviter = await this.prisma.users.findUnique({
@@ -500,7 +490,7 @@ export class ProjectMembersService {
         });
       }
 
-      // Log member added
+      // Log member added (only log when accepted, not when invitation sent)
       await this.activityLogsService.logMemberAdded({
         projectId: invitation.project_id,
         userId: invitation.invited_by,
