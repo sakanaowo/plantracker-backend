@@ -61,7 +61,7 @@ export class TasksService {
     projectId: string;
     boardId: string;
     title: string;
-    assigneeId?: string;
+    assigneeIds?: string[]; // ✅ Changed to array
     createdBy?: string;
     checklists?: Array<{
       title: string;
@@ -77,19 +77,29 @@ export class TasksService {
       ? new Prisma.Decimal(last.position).plus(1024)
       : new Prisma.Decimal(1024);
 
-    // Auto-assign: If no assignee specified, assign to creator
-    const finalAssigneeId = dto.assigneeId ?? dto.createdBy ?? null;
+    // ✅ No auto-assign - only use explicitly provided assignees
+    const assigneeIds = dto.assigneeIds ?? [];
 
     const task = await this.prisma.tasks.create({
       data: {
         project_id: dto.projectId,
         board_id: dto.boardId,
         title: dto.title,
-        assignee_id: finalAssigneeId,
         created_by: dto.createdBy ?? null,
         position: nextPos,
       },
     });
+
+    // Create task_assignees records
+    if (assigneeIds.length > 0) {
+      await this.prisma.task_assignees.createMany({
+        data: assigneeIds.map((userId) => ({
+          task_id: task.id,
+          user_id: userId,
+          assigned_by: dto.createdBy ?? null,
+        })),
+      });
+    }
 
     // Get project with workspace_id for activity logging
     const project = await this.prisma.projects.findUnique({
@@ -97,26 +107,28 @@ export class TasksService {
       select: { name: true, workspace_id: true },
     });
 
-    // Send notification if someone else is assigned (not self-assign)
-    if (finalAssigneeId && finalAssigneeId !== dto.createdBy) {
-      let assignedByName = 'Hệ thống';
+    // Send notifications to all assignees (except creator if auto-assigned)
+    for (const assigneeId of assigneeIds) {
+      if (assigneeId !== dto.createdBy) {
+        let assignedByName = 'Hệ thống';
 
-      if (dto.createdBy) {
-        const assigner = await this.prisma.users.findUnique({
-          where: { id: dto.createdBy },
-          select: { name: true },
+        if (dto.createdBy) {
+          const assigner = await this.prisma.users.findUnique({
+            where: { id: dto.createdBy },
+            select: { name: true },
+          });
+          assignedByName = assigner?.name ?? assignedByName;
+        }
+
+        await this.notificationsService.sendTaskAssigned({
+          taskId: task.id,
+          taskTitle: task.title,
+          projectName: project?.name ?? 'Project',
+          assigneeId: assigneeId,
+          assignedBy: dto.createdBy ?? 'system',
+          assignedByName,
         });
-        assignedByName = assigner?.name ?? assignedByName;
       }
-
-      await this.notificationsService.sendTaskAssigned({
-        taskId: task.id,
-        taskTitle: task.title,
-        projectName: project?.name ?? 'Project',
-        assigneeId: finalAssigneeId,
-        assignedBy: dto.createdBy ?? 'system',
-        assignedByName,
-      });
     }
 
     // Log task creation
@@ -130,17 +142,19 @@ export class TasksService {
         taskTitle: task.title,
       });
 
-      // Log task assignment (including auto-assign)
-      if (finalAssigneeId && dto.createdBy) {
-        await this.activityLogsService.logTaskAssigned({
-          taskId: task.id,
-          userId: dto.createdBy,
-          newAssigneeId: finalAssigneeId,
-          taskTitle: task.title,
-          workspaceId: project.workspace_id,
-          projectId: dto.projectId,
-          boardId: dto.boardId,
-        });
+      // Log task assignments
+      if (assigneeIds.length > 0 && dto.createdBy) {
+        for (const assigneeId of assigneeIds) {
+          await this.activityLogsService.logTaskAssigned({
+            taskId: task.id,
+            userId: dto.createdBy,
+            newAssigneeId: assigneeId,
+            taskTitle: task.title,
+            workspaceId: project.workspace_id,
+            projectId: dto.projectId,
+            boardId: dto.boardId,
+          });
+        }
       }
     }
 
@@ -176,7 +190,6 @@ export class TasksService {
     dto: {
       title?: string;
       description?: string;
-      assigneeId?: string;
       position?: number;
       updatedBy?: string;
     },
@@ -201,7 +214,6 @@ export class TasksService {
       data: {
         title: dto.title,
         description: dto.description,
-        assignee_id: dto.assigneeId,
         position: dto.position,
       },
     });
@@ -237,68 +249,6 @@ export class TasksService {
           ...context,
         });
       }
-    }
-
-    // Handle assignment changes
-    if (
-      dto.assigneeId &&
-      dto.assigneeId !== currentTask.assignee_id &&
-      dto.assigneeId !== dto.updatedBy
-    ) {
-      const assigner = dto.updatedBy
-        ? await this.prisma.users.findUnique({
-            where: { id: dto.updatedBy },
-            select: { name: true },
-          })
-        : null;
-
-      await this.notificationsService.sendTaskAssigned({
-        taskId: updatedTask.id,
-        taskTitle: updatedTask.title,
-        projectName: currentTask.projects?.name ?? 'Project',
-        assigneeId: dto.assigneeId,
-        assignedBy: dto.updatedBy ?? 'system',
-        assignedByName: assigner?.name ?? 'Hệ thống',
-      });
-
-      // Log assignment change
-      if (dto.updatedBy) {
-        const context = await this.getTaskContext(id);
-        if (currentTask.assignee_id) {
-          // Re-assignment
-          await this.activityLogsService.logTaskAssigned({
-            taskId: id,
-            userId: dto.updatedBy,
-            oldAssigneeId: currentTask.assignee_id,
-            newAssigneeId: dto.assigneeId,
-            taskTitle: updatedTask.title,
-            ...context,
-          });
-        } else {
-          // Initial assignment
-          await this.activityLogsService.logTaskAssigned({
-            taskId: id,
-            userId: dto.updatedBy,
-            newAssigneeId: dto.assigneeId,
-            taskTitle: updatedTask.title,
-            ...context,
-          });
-        }
-      }
-    } else if (
-      dto.assigneeId === null &&
-      currentTask.assignee_id &&
-      dto.updatedBy
-    ) {
-      // Unassignment
-      const context = await this.getTaskContext(id);
-      await this.activityLogsService.logTaskUnassigned({
-        taskId: id,
-        userId: dto.updatedBy,
-        oldAssigneeId: currentTask.assignee_id,
-        taskTitle: updatedTask.title,
-        ...context,
-      });
     }
 
     return updatedTask;
@@ -652,5 +602,176 @@ export class TasksService {
       },
       orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
     });
+  }
+
+  /**
+   * Get all assignees for a task
+   */
+  async getAssignees(taskId: string) {
+    return this.prisma.task_assignees.findMany({
+      where: { task_id: taskId },
+      include: {
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
+      },
+      orderBy: { assigned_at: 'asc' },
+    });
+  }
+
+  /**
+   * Assign multiple users to a task
+   */
+  async assignUsers(
+    taskId: string,
+    userIds: string[],
+    assignedBy?: string,
+  ): Promise<void> {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+      select: { id: true, title: true, project_id: true },
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    // Get existing assignees
+    const existingAssignees = await this.prisma.task_assignees.findMany({
+      where: { task_id: taskId },
+      select: { user_id: true },
+    });
+
+    const existingUserIds = new Set(existingAssignees.map((a) => a.user_id));
+
+    // Filter out users who are already assigned
+    const newUserIds = userIds.filter((userId) => !existingUserIds.has(userId));
+
+    if (newUserIds.length === 0) {
+      return; // All users already assigned
+    }
+
+    // Create new assignments
+    await this.prisma.task_assignees.createMany({
+      data: newUserIds.map((userId) => ({
+        task_id: taskId,
+        user_id: userId,
+        assigned_by: assignedBy ?? null,
+      })),
+    });
+
+    // Get project info for notifications
+    const project = await this.prisma.projects.findUnique({
+      where: { id: task.project_id },
+      select: { name: true, workspace_id: true },
+    });
+
+    // Send notifications to new assignees (except the person who assigned)
+    for (const userId of newUserIds) {
+      if (userId !== assignedBy) {
+        let assignedByName = 'Hệ thống';
+
+        if (assignedBy) {
+          const assigner = await this.prisma.users.findUnique({
+            where: { id: assignedBy },
+            select: { name: true },
+          });
+          assignedByName = assigner?.name ?? assignedByName;
+        }
+
+        await this.notificationsService.sendTaskAssigned({
+          taskId: task.id,
+          taskTitle: task.title,
+          projectName: project?.name ?? 'Project',
+          assigneeId: userId,
+          assignedBy: assignedBy ?? 'system',
+          assignedByName,
+        });
+      }
+
+      // Log assignment
+      if (assignedBy && project?.workspace_id) {
+        const context = await this.getTaskContext(taskId);
+        await this.activityLogsService.logTaskAssigned({
+          taskId,
+          userId: assignedBy,
+          newAssigneeId: userId,
+          taskTitle: task.title,
+          ...context,
+        });
+      }
+    }
+  }
+
+  /**
+   * Unassign a user from a task
+   */
+  async unassignUser(
+    taskId: string,
+    userId: string,
+    unassignedBy?: string,
+  ): Promise<void> {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+      select: { id: true, title: true },
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    const assignment = await this.prisma.task_assignees.findUnique({
+      where: {
+        task_id_user_id: {
+          task_id: taskId,
+          user_id: userId,
+        },
+      },
+    });
+
+    if (!assignment) {
+      return; // User not assigned, nothing to do
+    }
+
+    // Delete assignment
+    await this.prisma.task_assignees.delete({
+      where: {
+        task_id_user_id: {
+          task_id: taskId,
+          user_id: userId,
+        },
+      },
+    });
+
+    // Log unassignment
+    if (unassignedBy) {
+      const context = await this.getTaskContext(taskId);
+      await this.activityLogsService.logTaskUnassigned({
+        taskId,
+        userId: unassignedBy,
+        oldAssigneeId: userId,
+        taskTitle: task.title,
+        ...context,
+      });
+    }
+  }
+
+  /**
+   * Unassign all users from a task
+   */
+  async unassignAll(taskId: string, unassignedBy?: string): Promise<void> {
+    const assignees = await this.prisma.task_assignees.findMany({
+      where: { task_id: taskId },
+      select: { user_id: true },
+    });
+
+    for (const assignee of assignees) {
+      await this.unassignUser(taskId, assignee.user_id, unassignedBy);
+    }
   }
 }

@@ -119,4 +119,37 @@ export class TasksController {
   ) {
     return this.svc.deleteComment(commentId, userId);
   }
+
+  // ==================== ASSIGNEES ====================
+
+  @Get(':taskId/assignees')
+  getAssignees(@Param('taskId', new ParseUUIDPipe()) taskId: string) {
+    return this.svc.getAssignees(taskId);
+  }
+
+  @Post(':taskId/assignees')
+  assignUsers(
+    @Param('taskId', new ParseUUIDPipe()) taskId: string,
+    @Body() dto: { userIds: string[] },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.assignUsers(taskId, dto.userIds, userId);
+  }
+
+  @Delete(':taskId/assignees/:userId')
+  unassignUser(
+    @Param('taskId', new ParseUUIDPipe()) taskId: string,
+    @Param('userId', new ParseUUIDPipe()) assigneeUserId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.unassignUser(taskId, assigneeUserId, userId);
+  }
+
+  @Delete(':taskId/assignees')
+  unassignAll(
+    @Param('taskId', new ParseUUIDPipe()) taskId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.unassignAll(taskId, userId);
+  }
 }

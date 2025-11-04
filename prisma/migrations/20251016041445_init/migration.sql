@@ -1,3 +1,6 @@
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- CreateEnum
 CREATE TYPE "public"."email_status" AS ENUM ('QUEUED', 'SENT', 'FAILED');
 

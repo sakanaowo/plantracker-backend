@@ -319,50 +319,61 @@ model task_labels {
   @@id([task_id, label_id])
 }
 
+model task_assignees {
+  task_id     String   @db.Uuid
+  user_id     String   @db.Uuid
+  assigned_at DateTime @default(now()) @db.Timestamptz(6)
+  assigned_by String?  @db.Uuid
+  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([task_id, user_id])
+  @@index([task_id], map: "idx_task_assignees_task")
+  @@index([user_id], map: "idx_task_assignees_user")
+}
+
 model tasks {
-  id                                            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id                                    String          @db.Uuid
-  board_id                                      String          @db.Uuid
+  id                                            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id                                    String           @db.Uuid
+  board_id                                      String           @db.Uuid
   title                                         String
   description                                   String?
-  assignee_id                                   String?         @db.Uuid
-  created_by                                    String?         @db.Uuid
-  due_at                                        DateTime?       @db.Timestamptz(6)
-  start_at                                      DateTime?       @db.Timestamptz(6)
+  created_by                                    String?          @db.Uuid
+  due_at                                        DateTime?        @db.Timestamptz(6)
+  start_at                                      DateTime?        @db.Timestamptz(6)
   priority                                      priority?
-  position                                      Decimal         @default(0) @db.Decimal(10, 3)
-  issue_key                                     String?         @unique(map: "ux_tasks_issue_key") @db.VarChar(32)
+  position                                      Decimal          @default(0) @db.Decimal(10, 3)
+  issue_key                                     String?          @unique(map: "ux_tasks_issue_key") @db.VarChar(32)
   type                                          issue_type?
-  status                                        issue_status?   @default(TO_DO)
-  sprint_id                                     String?         @db.Uuid
-  epic_id                                       String?         @db.Uuid
-  parent_task_id                                String?         @db.Uuid
+  status                                        issue_status?    @default(TO_DO)
+  sprint_id                                     String?          @db.Uuid
+  epic_id                                       String?          @db.Uuid
+  parent_task_id                                String?          @db.Uuid
   story_points                                  Int?
   original_estimate_sec                         Int?
   remaining_estimate_sec                        Int?
-  created_at                                    DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at                                    DateTime        @default(now()) @db.Timestamptz(6)
-  deleted_at                                    DateTime?       @db.Timestamptz(6)
+  created_at                                    DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at                                    DateTime         @default(now()) @db.Timestamptz(6)
+  deleted_at                                    DateTime?        @db.Timestamptz(6)
   activity_logs                                 activity_logs[]
   attachments                                   attachments[]
   checklists                                    checklists[]
-  issue_links_issue_links_source_task_idTotasks issue_links[]   @relation("issue_links_source_task_idTotasks")
-  issue_links_issue_links_target_task_idTotasks issue_links[]   @relation("issue_links_target_task_idTotasks")
+  issue_links_issue_links_source_task_idTotasks issue_links[]    @relation("issue_links_source_task_idTotasks")
+  issue_links_issue_links_target_task_idTotasks issue_links[]    @relation("issue_links_target_task_idTotasks")
   task_comments                                 task_comments[]
   task_labels                                   task_labels[]
-  tasks_tasks_epic_idTotasks                    tasks?          @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
-  other_tasks_tasks_epic_idTotasks              tasks[]         @relation("tasks_epic_idTotasks")
-  tasks_tasks_parent_task_idTotasks             tasks?          @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
-  other_tasks_tasks_parent_task_idTotasks       tasks[]         @relation("tasks_parent_task_idTotasks")
-  sprints                                       sprints?        @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
-  users_tasks_assignee_idTousers                users?          @relation("tasks_assignee_idTousers", fields: [assignee_id], references: [id], onUpdate: NoAction)
-  boards                                        boards          @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_tasks_created_byTousers                 users?          @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
-  projects                                      projects        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  task_assignees                                task_assignees[]
+  tasks_tasks_epic_idTotasks                    tasks?           @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
+  other_tasks_tasks_epic_idTotasks              tasks[]          @relation("tasks_epic_idTotasks")
+  tasks_tasks_parent_task_idTotasks             tasks?           @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
+  other_tasks_tasks_parent_task_idTotasks       tasks[]          @relation("tasks_parent_task_idTotasks")
+  sprints                                       sprints?         @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
+  boards                                        boards           @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_tasks_created_byTousers                 users?           @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  projects                                      projects         @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   time_entries                                  time_entries[]
   watchers                                      watchers[]
 
-  @@index([assignee_id], map: "idx_tasks_assignee")
   @@index([board_id, position], map: "idx_tasks_board_position")
   @@index([due_at], map: "idx_tasks_due")
   @@index([status], map: "idx_tasks_status")
@@ -400,30 +411,30 @@ model user_devices {
 }
 
 model users {
-  id                             String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name                           String
-  email                          String                @unique
-  password_hash                  String
-  avatar_url                     String?
-  firebase_uid                   String                @unique
-  created_at                     DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at                     DateTime              @default(now()) @db.Timestamptz(6)
-  activity_logs                  activity_logs[]
-  events                         events[]
-  integration_tokens             integration_tokens[]
-  memberships                    memberships[]
-  notifications                  notifications[]
-  participants                   participants[]
-  project_members                project_members[]
-  project_invitations_invitee    project_invitations[] @relation("InviteeInvitations")
-  project_invitations_inviter    project_invitations[] @relation("InviterInvitations")
-  task_comments                  task_comments[]
-  tasks_tasks_assignee_idTousers tasks[]               @relation("tasks_assignee_idTousers")
-  tasks_tasks_created_byTousers  tasks[]               @relation("tasks_created_byTousers")
-  time_entries                   time_entries[]
-  user_devices                   user_devices[]
-  watchers                       watchers[]
-  workspaces                     workspaces[]
+  id                            String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                          String
+  email                         String                @unique
+  password_hash                 String
+  avatar_url                    String?
+  firebase_uid                  String                @unique
+  created_at                    DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime              @default(now()) @db.Timestamptz(6)
+  activity_logs                 activity_logs[]
+  events                        events[]
+  integration_tokens            integration_tokens[]
+  memberships                   memberships[]
+  notifications                 notifications[]
+  participants                  participants[]
+  project_members               project_members[]
+  project_invitations_invitee   project_invitations[] @relation("InviteeInvitations")
+  project_invitations_inviter   project_invitations[] @relation("InviterInvitations")
+  task_comments                 task_comments[]
+  task_assignees                task_assignees[]
+  tasks_tasks_created_byTousers tasks[]               @relation("tasks_created_byTousers")
+  time_entries                  time_entries[]
+  user_devices                  user_devices[]
+  watchers                      watchers[]
+  workspaces                    workspaces[]
 }
 
 model watchers {
