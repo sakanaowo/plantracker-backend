@@ -13,22 +13,39 @@ export class ProjectsService {
   ) {}
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
-    // Only return projects from workspaces where user is owner or member
+    // Return projects where:
+    // 1. In the specified workspace
+    // 2. User is workspace owner OR workspace member OR project member
+    // 3. BUT only return projects where user is actually a member (if not workspace owner/member)
     return this.prisma.projects.findMany({
       where: {
         workspace_id: workspaceId,
-        workspaces: {
-          OR: [
-            { owner_id: userId },
-            {
+        OR: [
+          // User is workspace owner - can see all projects in workspace
+          {
+            workspaces: {
+              owner_id: userId,
+            },
+          },
+          // User is workspace member - can see all projects in workspace
+          {
+            workspaces: {
               memberships: {
                 some: {
                   user_id: userId,
                 },
               },
             },
-          ],
-        },
+          },
+          // User is project member - can only see THIS specific project
+          {
+            project_members: {
+              some: {
+                user_id: userId,
+              },
+            },
+          },
+        ],
       },
       orderBy: { created_at: 'desc' },
     });
