@@ -19,6 +19,8 @@ import { CommentsModule } from './modules/comments/comments.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ProjectMembersModule } from './modules/project-members/project-members.module';
 import { ChecklistsModule } from './modules/checklists/checklists.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { ChecklistsModule } from './modules/checklists/checklists.module';
     AttachmentsModule,
     ProjectMembersModule,
     ChecklistsModule,
+    CalendarModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
