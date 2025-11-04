@@ -35,19 +35,23 @@ export class WorkerService {
           deleted_at: null, // Chỉ lấy tasks chưa bị xóa
         },
         include: {
-          users_tasks_assignee_idTousers: {
-            select: {
-              id: true,
-              name: true,
-              user_devices: {
-                where: {
-                  is_active: true,
-                },
+          task_assignees: {
+            include: {
+              users: {
                 select: {
-                  fcm_token: true,
-                  platform: true,
+                  id: true,
+                  name: true,
+                  user_devices: {
+                    where: {
+                      is_active: true,
+                    },
+                    select: {
+                      fcm_token: true,
+                      platform: true,
+                    },
+                    take: 1, // Lấy device active đầu tiên
+                  },
                 },
-                take: 1, // Lấy device active đầu tiên
               },
             },
           },
@@ -65,48 +69,51 @@ export class WorkerService {
       let sent = 0;
       let failed = 0;
 
-      // Gửi notification cho từng task
+      // Gửi notification cho từng task và từng assignee
       for (const task of upcomingTasks) {
-        const assignee = task.users_tasks_assignee_idTousers;
-        const activeDevice = assignee?.user_devices?.[0];
+        // Send notification to all assignees of this task
+        for (const assignment of task.task_assignees) {
+          const assignee = assignment.users;
+          const activeDevice = assignee?.user_devices?.[0];
 
-        if (!assignee || !activeDevice?.fcm_token) {
-          this.logger.warn(
-            `Task ${task.id}: User ${assignee?.id || 'unknown'} has no active FCM token, skipping...`,
-          );
-          failed++;
-          continue;
-        }
+          if (!assignee || !activeDevice?.fcm_token) {
+            this.logger.warn(
+              `Task ${task.id}: User ${assignee?.id || 'unknown'} has no active FCM token, skipping...`,
+            );
+            failed++;
+            continue;
+          }
 
-        try {
-          const timeUntilDue = task.due_at
-            ? this.getTimeUntilDue(task.due_at)
-            : 'soon';
+          try {
+            const timeUntilDue = task.due_at
+              ? this.getTimeUntilDue(task.due_at)
+              : 'soon';
 
-          await this.notificationsService.sendTaskReminder({
-            userId: assignee.id,
-            fcmToken: activeDevice.fcm_token,
-            task: {
-              id: task.id,
-              title: task.title,
-              dueDate: task.due_at,
-              projectName: task.projects.name,
-            },
-            message: `Task "${task.title}" đến hạn trong ${timeUntilDue}`,
-          });
+            await this.notificationsService.sendTaskReminder({
+              userId: assignee.id,
+              fcmToken: activeDevice.fcm_token,
+              task: {
+                id: task.id,
+                title: task.title,
+                dueDate: task.due_at,
+                projectName: task.projects.name,
+              },
+              message: `Task "${task.title}" đến hạn trong ${timeUntilDue}`,
+            });
 
-          sent++;
-          this.logger.log(
-            `Sent reminder for task ${task.id} to user ${assignee.id}`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to send notification for task ${task.id}:`,
-            error,
-          );
-          failed++;
-        }
-      }
+            sent++;
+            this.logger.log(
+              `Sent reminder for task ${task.id} to user ${assignee.id}`,
+            );
+          } catch (error) {
+            this.logger.error(
+              `Failed to send notification for task ${task.id}:`,
+              error,
+            );
+            failed++;
+          }
+        } // End of assignees loop
+      } // End of tasks loop
 
       this.logger.log(
         `Job completed: ${sent} sent, ${failed} failed out of ${upcomingTasks.length} tasks`,
@@ -148,18 +155,22 @@ export class WorkerService {
           deleted_at: null,
         },
         include: {
-          users_tasks_assignee_idTousers: {
-            select: {
-              id: true,
-              name: true,
-              user_devices: {
-                where: {
-                  is_active: true,
-                },
+          task_assignees: {
+            include: {
+              users: {
                 select: {
-                  fcm_token: true,
+                  id: true,
+                  name: true,
+                  user_devices: {
+                    where: {
+                      is_active: true,
+                    },
+                    select: {
+                      fcm_token: true,
+                    },
+                    take: 1,
+                  },
                 },
-                take: 1,
               },
             },
           },
@@ -178,40 +189,43 @@ export class WorkerService {
       let failed = 0;
 
       for (const task of overdueTasks) {
-        const assignee = task.users_tasks_assignee_idTousers;
-        const activeDevice = assignee?.user_devices?.[0];
+        // Send notification to all assignees of this task
+        for (const assignment of task.task_assignees) {
+          const assignee = assignment.users;
+          const activeDevice = assignee?.user_devices?.[0];
 
-        if (!assignee || !activeDevice?.fcm_token) {
-          failed++;
-          continue;
-        }
+          if (!assignee || !activeDevice?.fcm_token) {
+            failed++;
+            continue;
+          }
 
-        try {
-          const daysOverdue = task.due_at
-            ? this.getDaysOverdue(task.due_at)
-            : 0;
+          try {
+            const daysOverdue = task.due_at
+              ? this.getDaysOverdue(task.due_at)
+              : 0;
 
-          await this.notificationsService.sendTaskReminder({
-            userId: assignee.id,
-            fcmToken: activeDevice.fcm_token,
-            task: {
-              id: task.id,
-              title: task.title,
-              dueDate: task.due_at,
-              projectName: task.projects.name,
-            },
-            message: `⚠️ Task "${task.title}" đã quá hạn ${daysOverdue} ngày`,
-          });
+            await this.notificationsService.sendTaskReminder({
+              userId: assignee.id,
+              fcmToken: activeDevice.fcm_token,
+              task: {
+                id: task.id,
+                title: task.title,
+                dueDate: task.due_at,
+                projectName: task.projects.name,
+              },
+              message: `⚠️ Task "${task.title}" đã quá hạn ${daysOverdue} ngày`,
+            });
 
-          sent++;
-        } catch (error) {
-          this.logger.error(
-            `Failed to send overdue notification for task ${task.id}:`,
-            error,
-          );
-          failed++;
-        }
-      }
+            sent++;
+          } catch (error) {
+            this.logger.error(
+              `Failed to send overdue notification for task ${task.id}:`,
+              error,
+            );
+            failed++;
+          }
+        } // End of assignees loop
+      } // End of tasks loop
 
       this.logger.log(
         `Job completed: ${sent} sent, ${failed} failed out of ${overdueTasks.length} tasks`,
@@ -247,12 +261,14 @@ export class WorkerService {
               is_active: true,
             },
           },
-          tasks_tasks_assignee_idTousers: {
+          task_assignees: {
             some: {
-              status: {
-                not: 'DONE',
+              tasks: {
+                status: {
+                  not: 'DONE',
+                },
+                deleted_at: null,
               },
-              deleted_at: null,
             },
           },
         },
@@ -266,18 +282,17 @@ export class WorkerService {
             },
             take: 1,
           },
-          tasks_tasks_assignee_idTousers: {
-            where: {
-              status: {
-                not: 'DONE',
+          task_assignees: {
+            include: {
+              tasks: {
+                select: {
+                  id: true,
+                  title: true,
+                  due_at: true,
+                  status: true,
+                  deleted_at: true,
+                },
               },
-              deleted_at: null,
-            },
-            select: {
-              id: true,
-              title: true,
-              due_at: true,
-              status: true,
             },
           },
         },
@@ -297,12 +312,17 @@ export class WorkerService {
         }
 
         try {
-          const totalTasks = user.tasks_tasks_assignee_idTousers.length;
+          // Get all active tasks for this user
+          const activeTasks = user.task_assignees
+            .map((assignment) => assignment.tasks)
+            .filter((task) => task.status !== 'DONE' && !task.deleted_at);
+
+          const totalTasks = activeTasks.length;
           const now = new Date();
-          const upcomingTasks = user.tasks_tasks_assignee_idTousers.filter(
+          const upcomingTasks = activeTasks.filter(
             (task) => task.due_at && task.due_at > now,
           ).length;
-          const overdueTasks = user.tasks_tasks_assignee_idTousers.filter(
+          const overdueTasks = activeTasks.filter(
             (task) => task.due_at && task.due_at < now,
           ).length;
 

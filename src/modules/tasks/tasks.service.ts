@@ -455,13 +455,13 @@ export class TasksService {
       ? new Prisma.Decimal(lastTask.position).plus(1024)
       : new Prisma.Decimal(1024);
 
+    // Create task (no auto-assign for quick tasks)
     return this.prisma.tasks.create({
       data: {
         project_id: defaultProject.id,
         board_id: targetBoard.id,
         title: dto.title,
         description: dto.description ?? null,
-        assignee_id: userId,
         created_by: userId,
         position: nextPosition,
       },

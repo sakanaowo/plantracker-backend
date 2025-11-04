@@ -57,11 +57,14 @@ export class CommentsService {
       },
     });
 
-    // Get task assignee and creator for notification
+    // Get task assignees and creator for notification
     const notifyUserIds: string[] = [];
-    if (task.assignee_id && task.assignee_id !== userId) {
-      notifyUserIds.push(task.assignee_id);
-    }
+    // Add all assignees except the comment author
+    task.task_assignees.forEach((assignment) => {
+      if (assignment.user_id !== userId) {
+        notifyUserIds.push(assignment.user_id);
+      }
+    });
     if (
       task.created_by &&
       task.created_by !== userId &&
@@ -304,6 +307,13 @@ export class CommentsService {
     const task = await this.prisma.tasks.findUnique({
       where: { id: taskId },
       include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        },
         projects: {
           include: {
             workspaces: {

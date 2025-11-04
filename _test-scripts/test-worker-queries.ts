@@ -28,20 +28,24 @@ async function testUpcomingTasksQuery() {
         deleted_at: null,
       },
       include: {
-        users_tasks_assignee_idTousers: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            user_devices: {
-              where: {
-                is_active: true,
-              },
+        task_assignees: {
+          include: {
+            users: {
               select: {
-                fcm_token: true,
-                platform: true,
+                id: true,
+                name: true,
+                email: true,
+                user_devices: {
+                  where: {
+                    is_active: true,
+                  },
+                  select: {
+                    fcm_token: true,
+                    platform: true,
+                  },
+                  take: 1,
+                },
               },
-              take: 1,
             },
           },
         },
