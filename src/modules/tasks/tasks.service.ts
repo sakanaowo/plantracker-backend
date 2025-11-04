@@ -48,6 +48,20 @@ export class TasksService {
     return this.prisma.tasks.findMany({
       where: { board_id: boardId, deleted_at: null },
       orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 
