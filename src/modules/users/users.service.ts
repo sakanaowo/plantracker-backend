@@ -365,12 +365,17 @@ export class UsersService {
     userId: string,
     dto: RegisterDeviceDto,
   ): Promise<DeviceResponseDto> {
+    console.log(`🔔 [FCM] Registering device for user: ${userId}`);
+    console.log(`   FCM Token: ${dto.fcmToken.substring(0, 20)}...`);
+    console.log(`   Platform: ${dto.platform}, Model: ${dto.deviceModel}`);
+    
     // Check if device already exists by fcm_token
     const existingDevice = await this.prisma.user_devices.findUnique({
       where: { fcm_token: dto.fcmToken },
     });
 
     if (existingDevice) {
+      console.log(`✅ [FCM] Token already registered, updating device ${existingDevice.id}`);
       // Update existing device
       const updated = await this.prisma.user_devices.update({
         where: { id: existingDevice.id },
@@ -385,9 +390,11 @@ export class UsersService {
           last_active_at: new Date(),
         },
       });
+      console.log(`✓ Device updated successfully`);
       return this.mapDeviceToDto(updated);
     }
 
+    console.log(`🆕 [FCM] Creating new device registration`);
     // Create new device
     const device = await this.prisma.user_devices.create({
       data: {
@@ -403,6 +410,7 @@ export class UsersService {
       },
     });
 
+    console.log(`✅ [FCM] Device registered with ID: ${device.id}`);
     return this.mapDeviceToDto(device);
   }
 

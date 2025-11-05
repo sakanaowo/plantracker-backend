@@ -106,13 +106,13 @@ export class NotificationsGateway
       // Track online status
       if (!this.onlineUsers.has(userId)) {
         this.onlineUsers.set(userId, new Set());
+        console.log(`🆕 [WebSocket] First connection for user ${userId}`);
       }
       this.onlineUsers.get(userId)!.add(client.id);
 
-      console.log(`✅ User ${userId} connected via WebSocket (${client.id})`);
-      console.log(
-        `   Total connections for user: ${this.onlineUsers.get(userId)!.size}`,
-      );
+      console.log(`✅ [WebSocket] User ${userId} connected (socket: ${client.id})`);
+      console.log(`   Total connections for this user: ${this.onlineUsers.get(userId)!.size}`);
+      console.log(`   Total online users: ${this.onlineUsers.size}`);
 
       // Send welcome message
       client.emit('connected', {
@@ -143,16 +143,16 @@ export class NotificationsGateway
         if (userSockets.size === 0) {
           // User completely offline
           this.onlineUsers.delete(userId);
-          console.log(`🔴 User ${userId} went offline`);
+          console.log(`🔴 [WebSocket] User ${userId} went completely OFFLINE`);
+          console.log(`   Total online users: ${this.onlineUsers.size}`);
         } else {
-          console.log(
-            `⚠️ User ${userId} disconnected one socket, ${userSockets.size} remaining`,
-          );
+          console.log(`⚠️ [WebSocket] User ${userId} disconnected one socket`);
+          console.log(`   Remaining sockets for this user: ${userSockets.size}`);
         }
       }
+    } else {
+      console.log(`❌ [WebSocket] Unauthenticated client disconnected: ${client.id}`);
     }
-
-    console.log(`❌ Client disconnected: ${client.id}`);
   }
 
   /**
@@ -222,8 +222,21 @@ export class NotificationsGateway
    */
   emitToUser(userId: string, event: string, data: any) {
     const userRoom = `user_${userId}`;
+    const isOnline = this.isUserOnline(userId);
+    const socketCount = this.onlineUsers.get(userId)?.size || 0;
+    
+    console.log(`📤 [WebSocket] Emitting '${event}' to user ${userId}`);
+    console.log(`   User status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+    console.log(`   Active sockets: ${socketCount}`);
+    console.log(`   Room: ${userRoom}`);
+    console.log(`   Data type: ${data?.type || 'unknown'}`);
+    
+    if (!isOnline) {
+      console.log(`⚠️ [WebSocket] User ${userId} not connected - message will be lost!`);
+    }
+    
     this.server.to(userRoom).emit(event, data);
-    console.log(`📤 Emitted '${event}' to user ${userId}`);
+    console.log(`✅ [WebSocket] Message emitted to room ${userRoom}`);
   }
 
   /**
@@ -246,10 +259,19 @@ export class NotificationsGateway
 
   /**
    * Check if user is online (has active WebSocket connection)
+   * IMPORTANT: This is checked BEFORE sending notification to decide WebSocket vs FCM
+   * If returns TRUE → WebSocket delivery (instant)
+   * If returns FALSE → FCM delivery (push notification)
    */
   isUserOnline(userId: string): boolean {
     const sockets = this.onlineUsers.get(userId);
-    return !!sockets && sockets.size > 0;
+    const isOnline = !!sockets && sockets.size > 0;
+    console.log(`🔍 [WebSocket] Checking user ${userId} online status: ${isOnline ? 'ONLINE' : 'OFFLINE'} (${sockets?.size || 0} sockets)`);
+    
+    // CRITICAL: This determines notification delivery method!
+    // - ONLINE = WebSocket (real-time, in-app)
+    // - OFFLINE = FCM (push notification, system tray)
+    return isOnline;
   }
 
   /**

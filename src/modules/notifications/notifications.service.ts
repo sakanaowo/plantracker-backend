@@ -176,6 +176,7 @@ export class NotificationsService {
       // Check if user is online (WebSocket connected)
       const isOnline = this.notificationsGateway.isUserOnline(data.inviteeId);
       console.log('User online status:', isOnline);
+      console.log(`🎯 Delivery decision: ${isOnline ? 'ONLINE → WebSocket' : 'OFFLINE → FCM'}`);
 
       if (isOnline) {
         // User is online → send via WebSocket (real-time)
@@ -189,6 +190,36 @@ export class NotificationsService {
           notificationPayload,
         );
         console.log('✅ WebSocket notification sent');
+
+        // ALSO send FCM as backup (in case WebSocket message is lost due to race condition)
+        // Android will filter it out if app is foreground (show_fcm_notifications = false)
+        console.log('📱 [BACKUP] Also sending FCM (Android will filter if foreground)');
+        const fcmBackupResult = await this.fcmService.sendNotification({
+          userId: data.inviteeId,
+          notification: {
+            title: '🎯 Lời Mời Project',
+            body: message,
+          },
+          data: {
+            type: 'PROJECT_INVITE',
+            projectId: data.projectId,
+            projectName: data.projectName,
+            invitedBy: data.invitedBy,
+            invitedByName: data.invitedByName,
+            role: data.role,
+            invitationId: data.invitationId,
+            deeplink: `/projects/${data.projectId}`,
+            hasActions: 'true',
+            actionAccept: 'accept',
+            actionDecline: 'decline',
+          },
+        });
+        
+        if (fcmBackupResult === 'NO_FCM_TOKEN') {
+          console.log(`⚠️ [FCM BACKUP] No token, relying on WebSocket only`);
+        } else {
+          console.log(`✅ [FCM BACKUP] Sent successfully (will be filtered by Android if foreground)`);
+        }
 
         // Log as DELIVERED (WebSocket delivered instantly)
         await this.logNotification({
@@ -204,7 +235,7 @@ export class NotificationsService {
         this.logger.log(`User ${data.inviteeId} is OFFLINE → sending via FCM`);
         console.log('📱 Sending via FCM (push notification)...');
 
-        await this.fcmService.sendNotification({
+        const fcmResult = await this.fcmService.sendNotification({
           userId: data.inviteeId,
           notification: {
             title: '🎯 Lời Mời Project',
@@ -225,7 +256,14 @@ export class NotificationsService {
             actionDecline: 'decline',
           },
         });
-        console.log('✅ FCM notification sent');
+        
+        // Check FCM result
+        if (fcmResult === 'NO_FCM_TOKEN') {
+          console.log(`⚠️ [FCM] User ${data.inviteeId} has NO FCM TOKEN registered!`);
+          this.logger.warn(`User ${data.inviteeId} cannot receive push notifications - no FCM token`);
+        } else {
+          console.log(`✅ [FCM] Notification sent successfully: ${fcmResult}`);
+        }
 
         // Log as SENT (FCM queued)
         await this.logNotification({
