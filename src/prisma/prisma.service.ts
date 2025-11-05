@@ -8,10 +8,7 @@ export class PrismaService
 {
   constructor() {
     super({
-      log:
-        process.env.NODE_ENV === 'development'
-          ? ['query', 'error', 'warn']
-          : ['error'],
+      log: ['error'], // Only log errors, disable query logs
       datasources: {
         db: {
           url: process.env.NEON_DATABASE_URL,

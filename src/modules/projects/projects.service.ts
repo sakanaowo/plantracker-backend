@@ -13,31 +13,26 @@ export class ProjectsService {
   ) {}
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
+    console.log(`📋 listByWorkSpace called - workspace: ${workspaceId}, user: ${userId}`);
+    
     // Return projects where:
     // 1. In the specified workspace
-    // 2. User is workspace owner OR workspace member OR project member
-    // 3. BUT only return projects where user is actually a member (if not workspace owner/member)
+    // 2. User is workspace owner (can see ALL projects) OR
+    // 3. User is explicit project member (can see ONLY those projects)
+    // 
+    // NOTE: Being a workspace member does NOT automatically grant access to projects
+    // User must be explicitly added as project member
     return this.prisma.projects.findMany({
       where: {
         workspace_id: workspaceId,
         OR: [
-          // User is workspace owner - can see all projects in workspace
+          // User is workspace owner - can see ALL projects in workspace
           {
             workspaces: {
               owner_id: userId,
             },
           },
-          // User is workspace member - can see all projects in workspace
-          {
-            workspaces: {
-              memberships: {
-                some: {
-                  user_id: userId,
-                },
-              },
-            },
-          },
-          // User is project member - can only see THIS specific project
+          // User is explicit project member - can see THIS specific project only
           {
             project_members: {
               some: {
@@ -47,7 +42,20 @@ export class ProjectsService {
           },
         ],
       },
+      include: {
+        project_members: {
+          where: { user_id: userId },
+          select: { role: true }
+        }
+      },
       orderBy: { created_at: 'desc' },
+    }).then(projects => {
+      console.log(`✅ Found ${projects.length} projects for user ${userId} in workspace ${workspaceId}:`);
+      projects.forEach(p => {
+        const userRole = p.project_members[0]?.role || 'WORKSPACE_ACCESS';
+        console.log(`  - ${p.name} (type: ${p.type}, user role: ${userRole})`);
+      });
+      return projects;
     });
   }
 

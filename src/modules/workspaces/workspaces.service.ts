@@ -182,6 +182,8 @@ export class WorkspacesService {
   }
 
   async listMine(userId: string) {
+    console.log(`📋 listMine called - Getting workspaces for user: ${userId}`);
+    
     // Get workspaces where user is member or owner
     const [asMember, asOwner, viaProjects] = await Promise.all([
       // Workspaces where user is explicit member
@@ -209,6 +211,11 @@ export class WorkspacesService {
       }),
     ]);
 
+    console.log(`✅ Found workspaces:`);
+    console.log(`   - As explicit member: ${asMember.length}`);
+    console.log(`   - As owner: ${asOwner.length}`);
+    console.log(`   - Via project membership: ${viaProjects.length}`);
+
     // Deduplicate workspaces and add isOwner flag
     // Process in order: asMember, viaProjects, then asOwner (so owner flag takes priority)
     const map = new Map<string, any>();
@@ -235,7 +242,13 @@ export class WorkspacesService {
       }
     });
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+    console.log(`📊 Total unique workspaces: ${result.length}`);
+    result.forEach((w, index) => {
+      console.log(`   ${index + 1}. ${w.name} (owner: ${w.isOwner ? 'YES' : 'NO'}, id: ${w.id})`);
+    });
+
+    return result;
   }
 
   async getById(workspaceId: string, userId: string) {

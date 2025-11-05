@@ -503,6 +503,31 @@ export class ProjectMembersService {
             added_by: invitation.invited_by,
           },
         });
+        console.log('✅ Added user to project_members');
+      }
+
+      // AUTO-ADD: Add user to workspace memberships if not already a member
+      const workspaceId = invitation.projects.workspace_id;
+      const existingWorkspaceMembership = await this.prisma.memberships.findUnique({
+        where: {
+          user_id_workspace_id: {
+            user_id: userId,
+            workspace_id: workspaceId,
+          },
+        },
+      });
+
+      if (!existingWorkspaceMembership) {
+        await this.prisma.memberships.create({
+          data: {
+            user_id: userId,
+            workspace_id: workspaceId,
+            role: 'MEMBER', // Default workspace member role
+          },
+        });
+        console.log(`✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`);
+      } else {
+        console.log(`ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`);
       }
 
       // Log member added when accepted (separate from invitation sent)
