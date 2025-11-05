@@ -303,6 +303,8 @@ export class UsersService {
   }
 
   async updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
+    console.log('🔄 updateMeById called with:', { id, data });
+    
     // Update user profile
     const updatedUser = await this.prisma.users.update({
       where: { id },
@@ -312,9 +314,13 @@ export class UsersService {
         updated_at: new Date(),
       },
     });
+    
+    console.log('✅ User updated:', updatedUser.name);
 
     // If name is updated, also update the personal workspace name
     if (data.name) {
+      console.log('🔍 Searching for personal workspace for user:', id);
+      
       try {
         const personalWorkspace = await this.prisma.workspaces.findFirst({
           where: { 
@@ -322,20 +328,29 @@ export class UsersService {
           },
         });
 
+        console.log('📂 Found workspace:', personalWorkspace?.name);
+
         if (personalWorkspace) {
+          const newWorkspaceName = `${data.name.trim()}'s Workspace`;
+          
           await this.prisma.workspaces.update({
             where: { id: personalWorkspace.id },
             data: {
-              name: `${data.name.trim()}'s Workspace`,
+              name: newWorkspaceName,
               updated_at: new Date(),
             },
           });
-          console.log(`✅ Updated personal workspace name to: ${data.name.trim()}'s Workspace`);
+          
+          console.log(`✅ Updated personal workspace name to: ${newWorkspaceName}`);
+        } else {
+          console.log('⚠️ No personal workspace found for user:', id);
         }
       } catch (error) {
         // Log error but don't fail the user update
-        console.error('Failed to update personal workspace name:', error);
+        console.error('❌ Failed to update personal workspace name:', error);
       }
+    } else {
+      console.log('ℹ️ Name not provided, skipping workspace update');
     }
 
     return updatedUser;
