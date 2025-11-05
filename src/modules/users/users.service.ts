@@ -302,8 +302,9 @@ export class UsersService {
     return this.prisma.users.findUnique({ where: { id } });
   }
 
-  updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
-    return this.prisma.users.update({
+  async updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
+    // Update user profile
+    const updatedUser = await this.prisma.users.update({
       where: { id },
       data: {
         name: data.name ?? undefined,
@@ -311,6 +312,33 @@ export class UsersService {
         updated_at: new Date(),
       },
     });
+
+    // If name is updated, also update the personal workspace name
+    if (data.name) {
+      try {
+        const personalWorkspace = await this.prisma.workspaces.findFirst({
+          where: { 
+            owner_id: id,
+          },
+        });
+
+        if (personalWorkspace) {
+          await this.prisma.workspaces.update({
+            where: { id: personalWorkspace.id },
+            data: {
+              name: `${data.name.trim()}'s Workspace`,
+              updated_at: new Date(),
+            },
+          });
+          console.log(`✅ Updated personal workspace name to: ${data.name.trim()}'s Workspace`);
+        }
+      } catch (error) {
+        // Log error but don't fail the user update
+        console.error('Failed to update personal workspace name:', error);
+      }
+    }
+
+    return updatedUser;
   }
 
   // ==================== FCM DEVICE MANAGEMENT ====================
