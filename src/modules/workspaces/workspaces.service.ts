@@ -221,14 +221,16 @@ export class WorkspacesService {
         // First time seeing this workspace
         map.set(w.id, {
           ...w,
-          is_owner: isOwner,
+          is_owner: isOwner,  // Keep snake_case for database consistency
+          isOwner: isOwner,   // Add camelCase for frontend compatibility
         });
       } else if (isOwner) {
         // Already exists but user is owner, update the flag
         const existing = map.get(w.id);
         map.set(w.id, {
           ...existing,
-          is_owner: true,
+          is_owner: true,   // Keep snake_case
+          isOwner: true,    // Add camelCase
         });
       }
     });
