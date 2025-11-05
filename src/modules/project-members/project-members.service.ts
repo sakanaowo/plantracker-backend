@@ -163,6 +163,7 @@ export class ProjectMembersService {
     }
 
     // Create invitation instead of direct member
+    // Set far future expiration (effectively never expires)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days to accept
 
@@ -192,8 +193,21 @@ export class ProjectMembersService {
       },
     });
 
-    // Don't log activity here - will be logged when invitation is accepted
-    // This prevents duplicate logs in activity feed
+    // Log invitation activity (so inviter can see action in activity feed)
+    await this.activityLogsService.logMemberAdded({
+      workspaceId: project.workspace_id,
+      projectId,
+      userId: invitedBy,
+      memberId: user.id,
+      memberName: user.name,
+      role: dto.role ?? 'MEMBER',
+      metadata: {
+        type: 'INVITATION_SENT',
+        email: user.email,
+        invitationId: invitation.id,
+      },
+    });
+    console.log('✅ Activity log created for invitation');
 
     // Send notification to invited user
     const inviter = await this.prisma.users.findUnique({
@@ -388,9 +402,10 @@ export class ProjectMembersService {
       where: {
         user_id: userId,
         status: 'PENDING',
-        expires_at: {
-          gt: new Date(), // Not expired
-        },
+        // Skip expiration check - invitations never expire
+        // expires_at: {
+        //   gt: new Date(), // Not expired
+        // },
       },
       include: {
         projects: {
@@ -451,10 +466,10 @@ export class ProjectMembersService {
       );
     }
 
-    // Check if invitation is expired
-    if (invitation.expires_at < new Date()) {
-      throw new BadRequestException('Invitation has expired');
-    }
+    // Skip expiration check (invitations never expire for now)
+    // if (invitation.expires_at < new Date()) {
+    //   throw new BadRequestException('Invitation has expired');
+    // }
 
     const updatedStatus = action === 'accept' ? 'ACCEPTED' : 'DECLINED';
 
@@ -490,17 +505,21 @@ export class ProjectMembersService {
         });
       }
 
-      // Log member added (only log when accepted, not when invitation sent)
+      // Log member added when accepted (separate from invitation sent)
       await this.activityLogsService.logMemberAdded({
+        workspaceId: invitation.projects.workspace_id,
         projectId: invitation.project_id,
-        userId: invitation.invited_by,
+        userId: userId, // The user who accepted (not inviter)
         memberId: userId,
         memberName: invitation.users.name,
         role: invitation.role,
         metadata: {
           type: 'INVITATION_ACCEPTED',
+          invitedBy: invitation.invited_by,
+          invitationId: invitationId,
         },
       });
+      console.log('✅ Activity log created for acceptance');
     } else {
       // Log invitation declined
       await this.activityLogsService.logMemberRemoved({

@@ -564,9 +564,11 @@ export class ActivityLogsService {
     memberId: string;
     memberName: string;
     role: string;
+    workspaceId?: string;
     metadata?: any;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'ADDED',
@@ -643,7 +645,9 @@ export class ActivityLogsService {
    * Get activity feed for a specific project
    */
   async getProjectActivityFeed(projectId: string, limit = 100) {
-    return this.prisma.activity_logs.findMany({
+    console.log(`📋 Getting activity feed for project: ${projectId}, limit: ${limit}`);
+    
+    const logs = await this.prisma.activity_logs.findMany({
       where: { project_id: projectId },
       include: {
         users: {
@@ -657,6 +661,13 @@ export class ActivityLogsService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
+    
+    console.log(`✅ Found ${logs.length} activity logs for project ${projectId}`);
+    logs.forEach((log, index) => {
+      console.log(`  ${index + 1}. ${log.action} ${log.entity_type} by ${log.users.name} - ${log.entity_name}`);
+    });
+    
+    return logs;
   }
 
   /**
