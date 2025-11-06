@@ -21,6 +21,7 @@ import { ProjectMembersModule } from './modules/project-members/project-members.
 import { ChecklistsModule } from './modules/checklists/checklists.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { EventsModule } from './modules/events/events.module';
+import { GoogleAuthModule } from './modules/google-auth/google-auth.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { EventsModule } from './modules/events/events.module';
     ChecklistsModule,
     CalendarModule,
     EventsModule,
+    GoogleAuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
