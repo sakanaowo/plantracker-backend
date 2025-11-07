@@ -1,0 +1,46 @@
+### Google Calendar OAuth Testing
+### Firebase Token for: anhlandibo88@gmail.com (X6vBHkfkFee9g977WeZsT60Z4gg2)
+
+@baseUrl = http://localhost:3000/api
+@firebaseToken = eyJhbGciOiJSUzI1NiIsImtpZCI6IjU0NTEzMjA5OWFkNmJmNjEzODJiNmI0Y2RlOWEyZGZlZDhjYjMwZjAiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoic2FrYW5hIiwicGljdHVyZSI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hL0FDZzhvY0pCcXA5YW4yNGt3a2xyQ2NCcFlYaVVtM09INkVWZG1Hb3YybkkxU3N4aHpPd1ZNYTd0PXM5Ni1jIiwiaXNzIjoiaHR0cHM6Ly9zZWN1cmV0b2tlbi5nb29nbGUuY29tL3BsYW50cmFja2VyLTU5MGY1IiwiYXVkIjoicGxhbnRyYWNrZXItNTkwZjUiLCJhdXRoX3RpbWUiOjE3NjI1Mjg0NzQsInVzZXJfaWQiOiJYNnZCSGtma0ZlZTlnOTc3V2Vac1Q2MFo0Z2cyIiwic3ViIjoiWDZ2QkhrZmtGZWU5Zzk3N1dlWnNUNjBaNGdnMiIsImlhdCI6MTc2MjUyODQ3NSwiZXhwIjoxNzYyNTMyMDc1LCJlbWFpbCI6ImFuaGxhbmRpYm84OEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJnb29nbGUuY29tIjpbIjExMzM3NzIwNTA5ODMxNDIyNDY5NiJdLCJlbWFpbCI6WyJhbmhsYW5kaWJvODhAZ21haWwuY29tIl19LCJzaWduX2luX3Byb3ZpZGVyIjoiZ29vZ2xlLmNvbSJ9fQ.fMskYl1g91QoJTQORmFP8mnv7iE9GFHOyiMm7R1a9IxlE-wRcuMw_JX0pEaQPgx5IqCvbn3CpxITXbhIesDWMBl4BBlL_iWFYKlHkCL_rmxqjcxZGtXhbXPOpGVfOod4m62ZErKbz9Ru3WYI4CU5NVhb6z4lwfFLbwr9qn2mnLNmsokSoiqxzjDzrmZBbrWnvZXj58sFRbpndhEjXNe1PmQvwVlKhdpz9cTzWNevBZNXDmwiyUqMn2vTRZtmebYH_nog4ud88mV7dJ0dIV-LVzl83IO7ia3bSKi19eQ6Y4MC3ptTax0235_qT2V4_xwFK6x8qY9Begz_T7veIFOJZQ
+
+### 1. Test GET Auth URL
+GET {{baseUrl}}/auth/google/auth-url
+Authorization: Bearer {{firebaseToken}}
+
+### Expected: Returns { authUrl: "https://accounts.google.com/o/oauth2/v2/auth?..." }
+### Action: Copy the authUrl and open it in browser
+### Then authorize with Google account
+
+### 2. Check Integration Status (before connection)
+GET {{baseUrl}}/auth/google/status
+Authorization: Bearer {{firebaseToken}}
+
+### Expected: Returns { connected: false } or integration not found
+
+### 3. Test OAuth Callback (after user authorizes)
+### Replace AUTHORIZATION_CODE with the code from Google redirect
+### The callback is handled via browser redirect, but you can test manually:
+GET {{baseUrl}}/auth/google/callback?code=AUTHORIZATION_CODE&state=USER_ID
+
+### Expected: Redirects to success page or returns success response
+
+### 4. Check Integration Status (after connection)
+GET {{baseUrl}}/auth/google/status
+Authorization: Bearer {{firebaseToken}}
+
+### Expected: Returns { connected: true, accountEmail: "user@gmail.com", ... }
+
+### 5. Test Disconnect
+GET {{baseUrl}}/auth/google/disconnect
+Authorization: Bearer {{firebaseToken}}
+
+### Expected: Returns success message
+
+### 6. Alternative: Test with Calendar endpoints
+GET {{baseUrl}}/calendar/google/auth-url
+Authorization: Bearer {{firebaseToken}}
+
+### 7. Check Calendar Integration Status
+GET {{baseUrl}}/calendar/google/status
+Authorization: Bearer {{firebaseToken}}

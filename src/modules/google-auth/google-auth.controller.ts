@@ -26,17 +26,38 @@ export class GoogleAuthController {
     @Query('state') userId: string,
     @Res() res: Response,
   ) {
+    console.log('=== OAuth Callback Debug ===');
+    console.log('code:', code ? 'EXISTS' : 'MISSING');
+    console.log('state (userId):', userId);
+    console.log('===========================');
+
     try {
+      // Validate parameters
+      if (!code) {
+        return res.redirect(
+          `plantracker://calendar/connected?success=false&error=No authorization code`,
+        );
+      }
+
+      if (!userId) {
+        return res.redirect(
+          `plantracker://calendar/connected?success=false&error=No token provided`,
+        );
+      }
+
       const result = await this.googleAuthService.handleCallback(code, userId);
 
-      // Redirect back to app with success message
+      // Redirect back to Android app with success message
       res.redirect(
-        `http://localhost:3000/calendar/connected?success=true&email=${result.accountEmail}`,
+        `plantracker://calendar/connected?success=true&email=${result.accountEmail}`,
       );
     } catch (error) {
-      // Redirect back to app with error message
+      // Redirect back to Android app with error message
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      console.error('OAuth callback error:', errorMessage);
       res.redirect(
-        `http://localhost:3000/calendar/connected?success=false&error=${error.message}`,
+        `plantracker://calendar/connected?success=false&error=${errorMessage}`,
       );
     }
   }
