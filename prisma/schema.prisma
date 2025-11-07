@@ -104,10 +104,13 @@ model events {
   id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   project_id         String               @db.Uuid
   title              String
+  description        String?
   start_at           DateTime             @db.Timestamptz(6)
   end_at             DateTime             @db.Timestamptz(6)
   location           String?
   meet_link          String?
+  event_type         event_type           @default(OTHER)
+  recurrence         recurrence_type      @default(NONE)
   created_by         String?              @db.Uuid
   created_at         DateTime             @default(now()) @db.Timestamptz(6)
   updated_at         DateTime             @default(now()) @db.Timestamptz(6)
@@ -115,6 +118,8 @@ model events {
   projects           projects             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   external_event_map external_event_map[]
   participants       participants[]
+
+  @@index([project_id, start_at], map: "idx_events_project_start")
 }
 
 model external_event_map {
@@ -353,6 +358,11 @@ model tasks {
   story_points                                  Int?
   original_estimate_sec                         Int?
   remaining_estimate_sec                        Int?
+  // Calendar integration fields
+  calendar_event_id                             String?          @db.Uuid
+  calendar_reminder_enabled                     Boolean          @default(false)
+  calendar_reminder_time                        Int? // minutes before due_at
+  last_synced_at                                DateTime?        @db.Timestamptz(6)
   created_at                                    DateTime         @default(now()) @db.Timestamptz(6)
   updated_at                                    DateTime         @default(now()) @db.Timestamptz(6)
   deleted_at                                    DateTime?        @db.Timestamptz(6)
@@ -611,4 +621,18 @@ enum token_status {
   ACTIVE
   REVOKED
   EXPIRED
+}
+
+enum event_type {
+  MEETING
+  MILESTONE
+  OTHER
+}
+
+enum recurrence_type {
+  NONE
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
 }

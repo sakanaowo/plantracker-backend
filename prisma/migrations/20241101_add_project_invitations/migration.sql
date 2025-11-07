@@ -1,3 +1,10 @@
+-- Create project_role enum if not exists
+DO $$ BEGIN
+  CREATE TYPE project_role AS ENUM ('OWNER', 'ADMIN', 'MEMBER', 'VIEWER');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 -- Create invitation_status enum
 CREATE TYPE invitation_status AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED');
 

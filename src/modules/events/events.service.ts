@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { participant_status } from '@prisma/client';
-import { GoogleCalendarService } from '../calendar/google-calendar-firebase.service';
+import { GoogleCalendarService } from '../calendar/google-calendar.service';
 
 @Injectable()
 export class EventsService {
@@ -33,20 +33,6 @@ export class EventsService {
     });
 
     this.logger.log(`Created event: ${event.title} for user ${userId}`);
-
-    // Auto-sync to Google Calendar if enabled
-    if (createEventDto.syncToGoogle) {
-      try {
-        await this.googleCalendarService.syncEventToGoogle(event.id);
-        this.logger.log(`Event ${event.id} synced to Google Calendar`);
-      } catch (error) {
-        this.logger.error(
-          `Failed to sync event ${event.id} to Google Calendar:`,
-          error,
-        );
-        // Don't fail the creation if sync fails
-      }
-    }
 
     return event;
   }
@@ -165,5 +151,307 @@ export class EventsService {
       },
       data: { status: status as participant_status },
     });
+  }
+
+  /**
+   * Get events for project with filter
+   */
+  async getProjectEvents(
+    projectId: string,
+    filter?: 'UPCOMING' | 'PAST' | 'RECURRING',
+  ) {
+    const now = new Date();
+    const where: any = { project_id: projectId };
+
+    if (filter === 'UPCOMING') {
+      where.start_at = { gte: now };
+    } else if (filter === 'PAST') {
+      where.start_at = { lt: now };
+    } else if (filter === 'RECURRING') {
+      where.event_type = { not: 'NONE' };
+    }
+
+    return this.prisma.events.findMany({
+      where,
+      include: {
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
+        participants: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        start_at: filter === 'PAST' ? 'desc' : 'asc',
+      },
+    });
+  }
+
+  /**
+   * Create project event with Google Meet integration
+   */
+  async createProjectEvent(
+    userId: string,
+    dto: {
+      projectId: string;
+      title: string;
+      description?: string;
+      date: string; // YYYY-MM-DD
+      time: string; // HH:mm
+      duration: number; // minutes
+      type: 'MEETING' | 'MILESTONE' | 'OTHER';
+      recurrence: 'NONE' | 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+      attendeeIds: string[];
+      createGoogleMeet: boolean;
+    },
+  ) {
+    // Get attendee emails
+    const attendees = await this.prisma.users.findMany({
+      where: { id: { in: dto.attendeeIds } },
+      select: { email: true, id: true },
+    });
+
+    const attendeeEmails = attendees.map((a) => a.email);
+
+    // Create in Google Calendar if user has it connected
+    let calendarEventId: string | null = null;
+    let meetLink: string | null = null;
+
+    try {
+      const startAt = new Date(`${dto.date}T${dto.time}:00`);
+      const endAt = new Date(startAt.getTime() + dto.duration * 60000);
+
+      const result =
+        await this.googleCalendarService.createProjectEventInGoogle(userId, {
+          title: dto.title,
+          description: dto.description,
+          startAt,
+          endAt,
+          attendeeEmails,
+          createMeet: dto.createGoogleMeet,
+        });
+
+      calendarEventId = result.calendarEventId;
+      meetLink = result.meetLink;
+    } catch (error) {
+      this.logger.error('Failed to create calendar event:', error);
+      // Continue without calendar integration
+    }
+
+    // Create in database
+    const startAt = new Date(`${dto.date}T${dto.time}:00`);
+    const endAt = new Date(startAt.getTime() + dto.duration * 60000);
+
+    const event = await this.prisma.events.create({
+      data: {
+        project_id: dto.projectId,
+        title: dto.title,
+        description: dto.description,
+        start_at: startAt,
+        end_at: endAt,
+        event_type: dto.type,
+        recurrence: dto.recurrence,
+        meet_link: meetLink,
+        created_by: userId,
+        participants: {
+          create: dto.attendeeIds.map((attendeeId) => ({
+            user_id: attendeeId,
+            email: attendees.find((a) => a.id === attendeeId)?.email || '',
+            status: participant_status.INVITED,
+          })),
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            users: true,
+          },
+        },
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Store external event mapping
+    if (calendarEventId) {
+      await this.prisma.external_event_map.create({
+        data: {
+          event_id: event.id,
+          provider: 'GOOGLE_CALENDAR',
+          provider_event_id: calendarEventId,
+          last_synced_at: new Date(),
+        },
+      });
+    }
+
+    this.logger.log(`Created project event: ${event.title}`);
+    return event;
+  }
+
+  /**
+   * Update project event
+   */
+  async updateProjectEvent(
+    userId: string,
+    eventId: string,
+    dto: {
+      title?: string;
+      description?: string;
+      date?: string;
+      time?: string;
+      duration?: number;
+      attendeeIds?: string[];
+    },
+  ) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        external_event_map: {
+          where: { provider: 'GOOGLE_CALENDAR' },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // Update in Google Calendar if exists
+    const mapping = event.external_event_map[0];
+    if (mapping?.provider_event_id) {
+      try {
+        let startAt: Date | undefined;
+        let endAt: Date | undefined;
+
+        if (dto.date && dto.time) {
+          startAt = new Date(`${dto.date}T${dto.time}:00`);
+          endAt = new Date(startAt.getTime() + (dto.duration || 60) * 60000);
+        }
+
+        const attendees = dto.attendeeIds
+          ? await this.prisma.users.findMany({
+              where: { id: { in: dto.attendeeIds } },
+              select: { email: true },
+            })
+          : undefined;
+
+        await this.googleCalendarService.updateProjectEventInGoogle(
+          userId,
+          mapping.provider_event_id,
+          {
+            title: dto.title,
+            description: dto.description,
+            startAt,
+            endAt,
+            attendeeEmails: attendees?.map((a) => a.email),
+          },
+        );
+      } catch (error) {
+        this.logger.error('Failed to update calendar event:', error);
+      }
+    }
+
+    // Update in database
+    const updateData: any = {};
+    if (dto.title) updateData.title = dto.title;
+    if (dto.description) updateData.description = dto.description;
+    if (dto.date && dto.time) {
+      const startAt = new Date(`${dto.date}T${dto.time}:00`);
+      updateData.start_at = startAt;
+      updateData.end_at = new Date(
+        startAt.getTime() + (dto.duration || 60) * 60000,
+      );
+    }
+
+    const updatedEvent = await this.prisma.events.update({
+      where: { id: eventId },
+      data: updateData,
+    });
+
+    this.logger.log(`Updated project event: ${updatedEvent.title}`);
+    return updatedEvent;
+  }
+
+  /**
+   * Delete project event
+   */
+  async deleteProjectEvent(userId: string, eventId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        external_event_map: {
+          where: { provider: 'GOOGLE_CALENDAR' },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // Delete from Google Calendar if exists
+    const mapping = event.external_event_map[0];
+    if (mapping?.provider_event_id) {
+      try {
+        await this.googleCalendarService.deleteProjectEventInGoogle(
+          userId,
+          mapping.provider_event_id,
+        );
+      } catch (error) {
+        this.logger.error('Failed to delete calendar event:', error);
+      }
+    }
+
+    // Delete from database (cascade will handle participants and mappings)
+    await this.prisma.events.delete({
+      where: { id: eventId },
+    });
+
+    this.logger.log(`Deleted project event: ${event.title}`);
+    return { success: true };
+  }
+
+  /**
+   * Send reminder to attendees
+   */
+  async sendReminder(eventId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        participants: {
+          include: {
+            users: true,
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // TODO: Integrate with notification system to send reminders
+    this.logger.log(`Sending reminder for event: ${event.title}`);
+
+    return { success: true };
   }
 }

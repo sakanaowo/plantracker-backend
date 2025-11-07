@@ -3,6 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/**
+ * TODO [TONIGHT TESTING]:
+ * 1. Test OAuth flow with real Google account
+ * 2. Test calendar event creation/update/delete
+ * 3. Test Google Meet link generation
+ * 4. Test token refresh when expired
+ * 5. Verify calendar sync works end-to-end with FE
+ *
+ * IMPORTANT: Current tests use MOCK OAuth - real API needs to be tested!
+ */
 @Injectable()
 export class GoogleCalendarService {
   private readonly logger = new Logger(GoogleCalendarService.name);
@@ -12,6 +22,7 @@ export class GoogleCalendarService {
     private prisma: PrismaService,
   ) {}
 
+  // TODO [TONIGHT]: Test with real Google OAuth - get actual auth URL
   async getAuthUrl(userId: string): Promise<string> {
     const oauth2Client = this.createOAuth2Client();
 
@@ -27,6 +38,8 @@ export class GoogleCalendarService {
     });
   }
 
+  // TODO [TONIGHT]: Test OAuth callback with real authorization code from Google
+  // Verify tokens are saved correctly to database
   async handleOAuthCallback(code: string, userId: string) {
     const oauth2Client = this.createOAuth2Client();
 
@@ -340,6 +353,342 @@ export class GoogleCalendarService {
         return 'TENTATIVE';
       default:
         return 'INVITED';
+    }
+  }
+
+  /**
+   * Create task reminder event in Google Calendar
+   * TODO [TONIGHT]: Test creating real task reminder in Google Calendar
+   * - Check event appears in user's calendar
+   * - Verify 15-minute duration and red color
+   * - Test with different reminderMinutes (15, 30, 60)
+   */
+  async createTaskReminderEvent(
+    userId: string,
+    taskId: string,
+    title: string,
+    dueDate: Date,
+    reminderMinutes: number,
+  ): Promise<string | null> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return null;
+    }
+
+    try {
+      const reminderTime = new Date(
+        dueDate.getTime() - reminderMinutes * 60000,
+      );
+      const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
+
+      const googleEvent = await calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: {
+          summary: `⏰ Nhắc nhở: ${title}`,
+          description: `Đây là nhắc nhở cho task: ${title}\n\nTask ID: ${taskId}`,
+          start: {
+            dateTime: reminderTime.toISOString(),
+            timeZone: 'Asia/Ho_Chi_Minh',
+          },
+          end: {
+            dateTime: reminderEndTime.toISOString(),
+            timeZone: 'Asia/Ho_Chi_Minh',
+          },
+          reminders: {
+            useDefault: false,
+            overrides: [
+              { method: 'popup', minutes: 10 },
+              { method: 'email', minutes: 30 },
+            ],
+          },
+          colorId: '11', // Red color for reminders
+        },
+      });
+
+      this.logger.log(`Created task reminder event: ${googleEvent.data.id}`);
+      return googleEvent.data.id || null;
+    } catch (error) {
+      this.logger.error(`Failed to create task reminder: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Update task reminder event
+   */
+  async updateTaskReminderEvent(
+    userId: string,
+    calendarEventId: string,
+    title: string,
+    dueDate: Date,
+    reminderMinutes: number,
+  ): Promise<boolean> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return false;
+    }
+
+    try {
+      const reminderTime = new Date(
+        dueDate.getTime() - reminderMinutes * 60000,
+      );
+      const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
+
+      await calendar.events.patch({
+        calendarId: 'primary',
+        eventId: calendarEventId,
+        requestBody: {
+          summary: `⏰ Nhắc nhở: ${title}`,
+          start: {
+            dateTime: reminderTime.toISOString(),
+            timeZone: 'Asia/Ho_Chi_Minh',
+          },
+          end: {
+            dateTime: reminderEndTime.toISOString(),
+            timeZone: 'Asia/Ho_Chi_Minh',
+          },
+        },
+      });
+
+      this.logger.log(`Updated task reminder event: ${calendarEventId}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to update task reminder: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Delete task reminder event
+   */
+  async deleteTaskReminderEvent(
+    userId: string,
+    calendarEventId: string,
+  ): Promise<boolean> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return false;
+    }
+
+    try {
+      await calendar.events.delete({
+        calendarId: 'primary',
+        eventId: calendarEventId,
+      });
+
+      this.logger.log(`Deleted task reminder event: ${calendarEventId}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to delete task reminder: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Create project event with optional Google Meet link
+   * TODO [TONIGHT]: Test creating project event with real Google Meet
+   * - Verify Google Meet link is generated correctly
+   * - Check attendees receive calendar invites
+   * - Test event appears in all attendees' calendars
+   * - Verify event details (title, description, time, duration)
+   */
+  async createProjectEventInGoogle(
+    userId: string,
+    eventData: {
+      title: string;
+      description?: string;
+      startAt: Date;
+      endAt: Date;
+      attendeeEmails: string[];
+      createMeet: boolean;
+    },
+  ): Promise<{ calendarEventId: string | null; meetLink: string | null }> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return { calendarEventId: null, meetLink: null };
+    }
+
+    try {
+      const requestBody: any = {
+        summary: eventData.title,
+        description: eventData.description,
+        start: {
+          dateTime: eventData.startAt.toISOString(),
+          timeZone: 'Asia/Ho_Chi_Minh',
+        },
+        end: {
+          dateTime: eventData.endAt.toISOString(),
+          timeZone: 'Asia/Ho_Chi_Minh',
+        },
+        attendees: eventData.attendeeEmails.map((email) => ({ email })),
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 10 },
+            { method: 'email', minutes: 60 },
+          ],
+        },
+      };
+
+      // Add conference data for Google Meet
+      if (eventData.createMeet) {
+        requestBody.conferenceData = {
+          createRequest: {
+            requestId: `meet-${Date.now()}`,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        };
+      }
+
+      const googleEvent = await calendar.events.insert({
+        calendarId: 'primary',
+        requestBody,
+        conferenceDataVersion: eventData.createMeet ? 1 : 0,
+        sendUpdates: 'all', // Send email notifications to attendees
+      });
+
+      const meetLink = googleEvent.data.conferenceData?.entryPoints?.find(
+        (ep) => ep.entryPointType === 'video',
+      )?.uri;
+
+      this.logger.log(
+        `Created project event: ${googleEvent.data.id} ${meetLink ? 'with Google Meet' : ''}`,
+      );
+
+      return {
+        calendarEventId: googleEvent.data.id || null,
+        meetLink: meetLink || null,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to create project event: ${error.message}`);
+      return { calendarEventId: null, meetLink: null };
+    }
+  }
+
+  /**
+   * Update project event in Google Calendar
+   */
+  async updateProjectEventInGoogle(
+    userId: string,
+    calendarEventId: string,
+    eventData: {
+      title?: string;
+      description?: string;
+      startAt?: Date;
+      endAt?: Date;
+      attendeeEmails?: string[];
+    },
+  ): Promise<boolean> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return false;
+    }
+
+    try {
+      // Get existing event first
+      const existing = await calendar.events.get({
+        calendarId: 'primary',
+        eventId: calendarEventId,
+      });
+
+      const updates: any = {
+        summary: eventData.title || existing.data.summary,
+        description: eventData.description || existing.data.description,
+      };
+
+      if (eventData.startAt && eventData.endAt) {
+        updates.start = {
+          dateTime: eventData.startAt.toISOString(),
+          timeZone: 'Asia/Ho_Chi_Minh',
+        };
+        updates.end = {
+          dateTime: eventData.endAt.toISOString(),
+          timeZone: 'Asia/Ho_Chi_Minh',
+        };
+      }
+
+      if (eventData.attendeeEmails) {
+        updates.attendees = eventData.attendeeEmails.map((email) => ({
+          email,
+        }));
+      }
+
+      await calendar.events.patch({
+        calendarId: 'primary',
+        eventId: calendarEventId,
+        requestBody: updates,
+        sendUpdates: 'all',
+      });
+
+      this.logger.log(`Updated project event: ${calendarEventId}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to update project event: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Delete project event from Google Calendar
+   */
+  async deleteProjectEventInGoogle(
+    userId: string,
+    calendarEventId: string,
+  ): Promise<boolean> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return false;
+    }
+
+    try {
+      await calendar.events.delete({
+        calendarId: 'primary',
+        eventId: calendarEventId,
+        sendUpdates: 'all', // Notify all attendees
+      });
+
+      this.logger.log(`Deleted project event: ${calendarEventId}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to delete project event: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Get calendar events for date range (for Calendar Tab)
+   */
+  async getCalendarEventsForDateRange(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<any[]> {
+    const calendar = await this.getCalendarClient(userId);
+    if (!calendar) {
+      this.logger.warn(`No calendar client for user ${userId}`);
+      return [];
+    }
+
+    try {
+      const response = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: 100,
+      });
+
+      return response.data.items || [];
+    } catch (error) {
+      this.logger.error(`Failed to get calendar events: ${error.message}`);
+      return [];
     }
   }
 }

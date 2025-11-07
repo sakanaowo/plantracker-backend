@@ -1,0 +1,698 @@
+{
+    "info": {
+        "name": "Plantracker - Google Calendar Integration",
+        "description": "API endpoints for Google Calendar integration with Tasks and Project Events",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_exporter_id": "plantracker-backend"
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{authToken}}",
+                "type": "string"
+            }
+        ]
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000",
+            "type": "string"
+        },
+        {
+            "key": "authToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "projectId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "taskId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "eventId",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "Google Calendar Integration",
+            "item": [
+                {
+                    "name": "Get Auth URL",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/calendar/auth-url",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "calendar",
+                                "auth-url"
+                            ]
+                        },
+                        "description": "Get Google OAuth URL to authorize calendar access"
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/calendar/auth-url",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "calendar",
+                                        "auth-url"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"authUrl\": \"https://accounts.google.com/o/oauth2/v2/auth?...\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Handle OAuth Callback",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/calendar/callback?code=authorization_code",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "calendar",
+                                "callback"
+                            ],
+                            "query": [
+                                {
+                                    "key": "code",
+                                    "value": "authorization_code",
+                                    "description": "Authorization code from Google"
+                                }
+                            ]
+                        },
+                        "description": "Handle Google OAuth callback and store tokens"
+                    }
+                },
+                {
+                    "name": "Get Integration Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/calendar/status",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "calendar",
+                                "status"
+                            ]
+                        },
+                        "description": "Check Google Calendar integration status for current user"
+                    },
+                    "response": [
+                        {
+                            "name": "Connected",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/calendar/status",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "calendar",
+                                        "status"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"isConnected\": true,\n  \"accountEmail\": \"user@example.com\",\n  \"lastSyncAt\": \"2024-12-20T10:30:00.000Z\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Disconnect Integration",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/calendar/disconnect",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "calendar",
+                                "disconnect"
+                            ]
+                        },
+                        "description": "Disconnect Google Calendar integration and revoke tokens"
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "DELETE",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/calendar/disconnect",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "calendar",
+                                        "disconnect"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true,\n  \"message\": \"Calendar integration disconnected successfully\"\n}"
+                        }
+                    ]
+                }
+            ],
+            "description": "Google Calendar OAuth and integration management"
+        },
+        {
+            "name": "Tasks Calendar Sync",
+            "item": [
+                {
+                    "name": "Update Task with Calendar Sync",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"calendarReminderEnabled\": true,\n  \"calendarReminderTime\": 30,\n  \"title\": \"Updated Task Title\",\n  \"dueAt\": \"2024-12-31T10:00:00Z\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/{{taskId}}/calendar-sync",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "tasks",
+                                "{{taskId}}",
+                                "calendar-sync"
+                            ]
+                        },
+                        "description": "Update task and sync with Google Calendar. Creates/updates/deletes calendar reminder based on calendarReminderEnabled flag."
+                    },
+                    "response": [
+                        {
+                            "name": "Enable Reminder",
+                            "originalRequest": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"calendarReminderEnabled\": true,\n  \"calendarReminderTime\": 30\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/tasks/{{taskId}}/calendar-sync",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "tasks",
+                                        "{{taskId}}",
+                                        "calendar-sync"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"id\": \"task-123\",\n  \"title\": \"Implement Calendar Feature\",\n  \"due_at\": \"2024-12-31T10:00:00.000Z\",\n  \"calendar_reminder_enabled\": true,\n  \"calendar_reminder_time\": 30,\n  \"calendar_event_id\": \"google-calendar-event-id\",\n  \"last_synced_at\": \"2024-12-20T10:30:00.000Z\"\n}"
+                        },
+                        {
+                            "name": "Disable Reminder",
+                            "originalRequest": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"calendarReminderEnabled\": false\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/tasks/{{taskId}}/calendar-sync",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "tasks",
+                                        "{{taskId}}",
+                                        "calendar-sync"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"id\": \"task-123\",\n  \"title\": \"Implement Calendar Feature\",\n  \"due_at\": \"2024-12-31T10:00:00.000Z\",\n  \"calendar_reminder_enabled\": false,\n  \"calendar_reminder_time\": null,\n  \"calendar_event_id\": null,\n  \"last_synced_at\": \"2024-12-20T10:30:00.000Z\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Tasks for Calendar View",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/calendar?projectId={{projectId}}&startDate=2024-12-01&endDate=2024-12-31",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "tasks",
+                                "calendar"
+                            ],
+                            "query": [
+                                {
+                                    "key": "projectId",
+                                    "value": "{{projectId}}",
+                                    "description": "Project ID to filter tasks"
+                                },
+                                {
+                                    "key": "startDate",
+                                    "value": "2024-12-01",
+                                    "description": "Start date (YYYY-MM-DD)"
+                                },
+                                {
+                                    "key": "endDate",
+                                    "value": "2024-12-31",
+                                    "description": "End date (YYYY-MM-DD)"
+                                }
+                            ]
+                        },
+                        "description": "Get all tasks within date range for calendar view, includes calendar sync status and assignees"
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/tasks/calendar?projectId={{projectId}}&startDate=2024-12-01&endDate=2024-12-31",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "tasks",
+                                        "calendar"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "projectId",
+                                            "value": "{{projectId}}"
+                                        },
+                                        {
+                                            "key": "startDate",
+                                            "value": "2024-12-01"
+                                        },
+                                        {
+                                            "key": "endDate",
+                                            "value": "2024-12-31"
+                                        }
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "[\n  {\n    \"id\": \"task-123\",\n    \"title\": \"Implement Calendar Feature\",\n    \"dueAt\": \"2024-12-15T10:00:00.000Z\",\n    \"calendarReminderEnabled\": true,\n    \"calendarEventId\": \"google-event-123\",\n    \"calendarReminderTime\": 30,\n    \"boardName\": \"Development Board\",\n    \"assignees\": [\n      {\n        \"id\": \"user-1\",\n        \"email\": \"dev1@example.com\",\n        \"name\": \"Developer 1\"\n      }\n    ],\n    \"creator\": {\n      \"id\": \"manager-1\",\n      \"email\": \"manager@example.com\",\n      \"name\": \"Project Manager\"\n    }\n  },\n  {\n    \"id\": \"task-456\",\n    \"title\": \"Write Documentation\",\n    \"dueAt\": \"2024-12-20T14:00:00.000Z\",\n    \"calendarReminderEnabled\": false,\n    \"calendarEventId\": null,\n    \"calendarReminderTime\": null,\n    \"boardName\": \"Documentation Board\",\n    \"assignees\": [],\n    \"creator\": {\n      \"id\": \"manager-1\",\n      \"email\": \"manager@example.com\",\n      \"name\": \"Project Manager\"\n    }\n  }\n]"
+                        }
+                    ]
+                }
+            ],
+            "description": "Task calendar synchronization endpoints"
+        },
+        {
+            "name": "Project Events",
+            "item": [
+                {
+                    "name": "Get Project Events",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/events/projects/{{projectId}}?filter=UPCOMING",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "events",
+                                "projects",
+                                "{{projectId}}"
+                            ],
+                            "query": [
+                                {
+                                    "key": "filter",
+                                    "value": "UPCOMING",
+                                    "description": "Filter: UPCOMING, PAST, or RECURRING"
+                                }
+                            ]
+                        },
+                        "description": "Get project events filtered by UPCOMING (start_at >= now), PAST (start_at < now), or RECURRING (recurrence != NONE)"
+                    },
+                    "response": [
+                        {
+                            "name": "Upcoming Events",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/events/projects/{{projectId}}?filter=UPCOMING",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "events",
+                                        "projects",
+                                        "{{projectId}}"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "filter",
+                                            "value": "UPCOMING"
+                                        }
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "[\n  {\n    \"id\": \"event-123\",\n    \"title\": \"Team Sprint Planning\",\n    \"description\": \"Plan next sprint tasks\",\n    \"start_at\": \"2024-12-25T10:00:00.000Z\",\n    \"duration\": 60,\n    \"event_type\": \"MEETING\",\n    \"recurrence\": \"WEEKLY\",\n    \"project_id\": \"project-123\",\n    \"created_by\": \"user-1\",\n    \"participants\": [\n      {\n        \"user_id\": \"user-1\",\n        \"user\": {\n          \"email\": \"dev1@example.com\",\n          \"name\": \"Developer 1\"\n        }\n      }\n    ]\n  }\n]"
+                        }
+                    ]
+                },
+                {
+                    "name": "Create Project Event",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"title\": \"Team Sprint Planning\",\n  \"description\": \"Plan tasks for next sprint\",\n  \"date\": \"2024-12-25\",\n  \"time\": \"10:00\",\n  \"duration\": 60,\n  \"type\": \"MEETING\",\n  \"recurrence\": \"WEEKLY\",\n  \"attendeeIds\": [\"user-1\", \"user-2\", \"user-3\"],\n  \"createGoogleMeet\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/events/projects",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "events",
+                                "projects"
+                            ]
+                        },
+                        "description": "Create a new project event with optional Google Meet link. Syncs to Google Calendar if integration is connected."
+                    },
+                    "response": [
+                        {
+                            "name": "Success with Google Meet",
+                            "originalRequest": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"projectId\": \"project-123\",\n  \"title\": \"Team Sprint Planning\",\n  \"description\": \"Plan tasks for next sprint\",\n  \"date\": \"2024-12-25\",\n  \"time\": \"10:00\",\n  \"duration\": 60,\n  \"type\": \"MEETING\",\n  \"recurrence\": \"WEEKLY\",\n  \"attendeeIds\": [\"user-1\", \"user-2\"],\n  \"createGoogleMeet\": true\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/events/projects",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "events",
+                                        "projects"
+                                    ]
+                                }
+                            },
+                            "status": "Created",
+                            "code": 201,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"id\": \"event-new-123\",\n  \"title\": \"Team Sprint Planning\",\n  \"description\": \"Plan tasks for next sprint\",\n  \"start_at\": \"2024-12-25T10:00:00.000Z\",\n  \"duration\": 60,\n  \"event_type\": \"MEETING\",\n  \"recurrence\": \"WEEKLY\",\n  \"project_id\": \"project-123\",\n  \"created_by\": \"user-organizer\",\n  \"meet_link\": \"https://meet.google.com/abc-defg-hij\",\n  \"calendar_event_id\": \"google-calendar-event-id\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Update Project Event",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Updated Event Title\",\n  \"description\": \"Updated description\",\n  \"date\": \"2024-12-26\",\n  \"time\": \"14:00\",\n  \"duration\": 90,\n  \"attendeeIds\": [\"user-1\", \"user-2\", \"user-3\"]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/events/projects/{{eventId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "events",
+                                "projects",
+                                "{{eventId}}"
+                            ]
+                        },
+                        "description": "Update project event details. Changes are synced to Google Calendar if integration is connected."
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "PATCH",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"title\": \"Updated Event Title\",\n  \"description\": \"Updated description\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/events/projects/{{eventId}}",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "events",
+                                        "projects",
+                                        "{{eventId}}"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"id\": \"event-123\",\n  \"title\": \"Updated Event Title\",\n  \"description\": \"Updated description\",\n  \"start_at\": \"2024-12-26T14:00:00.000Z\",\n  \"duration\": 90,\n  \"event_type\": \"MEETING\",\n  \"recurrence\": \"WEEKLY\",\n  \"updated_at\": \"2024-12-20T10:45:00.000Z\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete Project Event",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/events/projects/{{eventId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "events",
+                                "projects",
+                                "{{eventId}}"
+                            ]
+                        },
+                        "description": "Delete project event from database and Google Calendar"
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "DELETE",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/events/projects/{{eventId}}",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "events",
+                                        "projects",
+                                        "{{eventId}}"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true,\n  \"message\": \"Event deleted successfully\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Send Event Reminder",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/events/projects/{{eventId}}/send-reminder",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "events",
+                                "projects",
+                                "{{eventId}}",
+                                "send-reminder"
+                            ]
+                        },
+                        "description": "Send reminder notification to all event attendees"
+                    },
+                    "response": [
+                        {
+                            "name": "Success",
+                            "originalRequest": {
+                                "method": "POST",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/events/projects/{{eventId}}/send-reminder",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "events",
+                                        "projects",
+                                        "{{eventId}}",
+                                        "send-reminder"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true\n}"
+                        }
+                    ]
+                }
+            ],
+            "description": "Project events with Google Meet integration"
+        }
+    ]
+}

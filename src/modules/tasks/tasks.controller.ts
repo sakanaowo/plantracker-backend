@@ -7,6 +7,8 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -151,5 +153,48 @@ export class TasksController {
     @CurrentUser('id') userId: string,
   ) {
     return this.svc.unassignAll(taskId, userId);
+  }
+
+  // ==================== CALENDAR SYNC ====================
+  // TODO [TONIGHT]: Test task calendar sync with FE
+  // 1. Enable reminder → Check event created in Google Calendar
+  // 2. Update task → Check calendar event updated
+  // 3. Disable reminder → Check event deleted from calendar
+
+  @Put(':id/calendar-sync')
+  async updateCalendarSync(
+    @Param('id', new ParseUUIDPipe()) taskId: string,
+    @Body()
+    dto: {
+      calendarReminderEnabled: boolean;
+      calendarReminderTime?: number;
+      title?: string;
+      dueAt?: string;
+    },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.updateTaskWithCalendarSync(userId, taskId, {
+      calendarReminderEnabled: dto.calendarReminderEnabled,
+      calendarReminderTime: dto.calendarReminderTime,
+      title: dto.title,
+      dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+    });
+  }
+
+  // TODO [TONIGHT]: Test calendar view with FE
+  // - Filter tasks by date range
+  // - Check calendar_event_id is returned
+  // - Verify tasks show in FE calendar view
+  @Get('calendar')
+  async getTasksForCalendar(
+    @Query('projectId') projectId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.svc.getTasksForCalendar(
+      projectId,
+      new Date(startDate),
+      new Date(endDate),
+    );
   }
 }

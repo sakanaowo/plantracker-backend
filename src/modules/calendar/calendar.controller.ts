@@ -15,6 +15,21 @@ import {
   IntegrationStatusResponseDto,
 } from './dto/calendar-response.dto';
 
+/**
+ * TODO [TONIGHT TESTING WITH FE]:
+ * 1. Test GET /calendar/google/auth-url - Get OAuth URL
+ * 2. Test POST /calendar/google/callback - Complete OAuth flow
+ * 3. Test GET /calendar/google/status - Check integration status
+ * 4. Test POST /calendar/google/sync - Manual sync trigger
+ * 5. Test DELETE /calendar/google/disconnect - Disconnect integration
+ *
+ * FLOW TO TEST:
+ * 1. FE calls /auth-url → Opens Google consent screen
+ * 2. User authorizes → Google redirects back with code
+ * 3. FE calls /callback with code → Tokens saved to DB
+ * 4. Check /status → Should show connected
+ * 5. Test calendar sync with tasks/events
+ */
 @ApiTags('Calendar Integration')
 @Controller('calendar')
 @UseGuards(CombinedAuthGuard)
@@ -22,6 +37,7 @@ import {
 export class CalendarController {
   constructor(private googleCalendarService: GoogleCalendarService) {}
 
+  // TODO [TONIGHT]: Test getting real auth URL, open in browser
   @Get('google/auth-url')
   @ApiOperation({ summary: 'Get Google OAuth authorization URL' })
   @ApiResponse({

@@ -97,4 +97,86 @@ export class EventsController {
       statusData.status,
     );
   }
+
+  // ==================== NEW PROJECT EVENTS ENDPOINTS ====================
+  // TODO [TONIGHT]: Test project events with FE and Google Calendar
+  // 1. Create event with Google Meet → Check Meet link generated
+  // 2. Update event → Check calendar updated for all attendees
+  // 3. Delete event → Check removed from Google Calendar
+  // 4. Filter events (UPCOMING/PAST/RECURRING) → Check correct results
+  // 5. Send reminder → Check notifications sent
+
+  // TODO [TONIGHT]: Test GET /events/projects/:projectId?filter=UPCOMING
+  @Get('projects/:projectId')
+  @ApiOperation({ summary: 'Get project events with filter' })
+  @ApiResponse({ status: 200, description: 'Events retrieved successfully' })
+  getProjectEvents(
+    @Param('projectId') projectId: string,
+    @Query('filter') filter?: 'UPCOMING' | 'PAST' | 'RECURRING',
+  ) {
+    return this.eventsService.getProjectEvents(projectId, filter);
+  }
+
+  // TODO [TONIGHT]: Test creating event WITH createGoogleMeet=true
+  // Verify Google Meet link in response and attendees receive invite
+  @Post('projects')
+  @ApiOperation({ summary: 'Create project event with Google Meet' })
+  @ApiResponse({ status: 201, description: 'Event created successfully' })
+  createProjectEvent(
+    @Body()
+    dto: {
+      projectId: string;
+      title: string;
+      description?: string;
+      date: string;
+      time: string;
+      duration: number;
+      type: 'MEETING' | 'MILESTONE' | 'OTHER';
+      recurrence: 'NONE' | 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+      attendeeIds: string[];
+      createGoogleMeet: boolean;
+    },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.createProjectEvent(userId, dto);
+  }
+
+  // TODO [TONIGHT]: Test updating event, check Google Calendar syncs
+  @Patch('projects/:id')
+  @ApiOperation({ summary: 'Update project event' })
+  @ApiResponse({ status: 200, description: 'Event updated successfully' })
+  updateProjectEvent(
+    @Param('id') eventId: string,
+    @Body()
+    dto: {
+      title?: string;
+      description?: string;
+      date?: string;
+      time?: string;
+      duration?: number;
+      attendeeIds?: string[];
+    },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.updateProjectEvent(userId, eventId, dto);
+  }
+
+  // TODO [TONIGHT]: Test deleting event, verify removed from Google Calendar
+  @Delete('projects/:id')
+  @ApiOperation({ summary: 'Delete project event' })
+  @ApiResponse({ status: 200, description: 'Event deleted successfully' })
+  deleteProjectEvent(
+    @Param('id') eventId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.deleteProjectEvent(userId, eventId);
+  }
+
+  // TODO [TONIGHT]: Test send reminder (currently placeholder)
+  @Post('projects/:id/send-reminder')
+  @ApiOperation({ summary: 'Send reminder to event attendees' })
+  @ApiResponse({ status: 200, description: 'Reminder sent successfully' })
+  sendReminder(@Param('id') eventId: string) {
+    return this.eventsService.sendReminder(eventId);
+  }
 }

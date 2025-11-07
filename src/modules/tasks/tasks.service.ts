@@ -7,6 +7,7 @@ import { Prisma, tasks, task_comments } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { GoogleCalendarService } from '../calendar/google-calendar.service';
 
 @Injectable()
 export class TasksService {
@@ -14,6 +15,7 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly googleCalendarService: GoogleCalendarService,
   ) {}
 
   /**
@@ -787,5 +789,178 @@ export class TasksService {
     for (const assignee of assignees) {
       await this.unassignUser(taskId, assignee.user_id, unassignedBy);
     }
+  }
+
+  /**
+   * Update task with calendar sync
+   */
+  async updateTaskWithCalendarSync(
+    userId: string,
+    taskId: string,
+    updateData: {
+      title?: string;
+      dueAt?: Date;
+      calendarReminderEnabled?: boolean;
+      calendarReminderTime?: number;
+    },
+  ): Promise<tasks> {
+    const task = await this.prisma.tasks.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    // Check if user has Google Calendar connected
+    const integration = await this.prisma.integration_tokens.findFirst({
+      where: {
+        user_id: userId,
+        provider: 'GOOGLE_CALENDAR',
+        status: 'ACTIVE',
+      },
+    });
+
+    const hasCalendarIntegration = !!integration;
+
+    // Prepare update data
+    const dataToUpdate: any = {};
+
+    if (updateData.title !== undefined) {
+      dataToUpdate.title = updateData.title;
+    }
+
+    if (updateData.dueAt !== undefined) {
+      dataToUpdate.due_at = updateData.dueAt;
+    }
+
+    // Handle calendar sync
+    if (
+      hasCalendarIntegration &&
+      updateData.calendarReminderEnabled !== undefined
+    ) {
+      dataToUpdate.calendar_reminder_enabled =
+        updateData.calendarReminderEnabled;
+
+      if (updateData.calendarReminderTime !== undefined) {
+        dataToUpdate.calendar_reminder_time = updateData.calendarReminderTime;
+      }
+
+      const taskTitle = updateData.title || task.title;
+      const taskDueAt = updateData.dueAt || task.due_at;
+      const reminderTime =
+        updateData.calendarReminderTime || task.calendar_reminder_time || 30;
+
+      if (updateData.calendarReminderEnabled && taskDueAt) {
+        if (task.calendar_event_id) {
+          // Update existing calendar event
+          const success =
+            await this.googleCalendarService.updateTaskReminderEvent(
+              userId,
+              task.calendar_event_id,
+              taskTitle,
+              taskDueAt,
+              reminderTime,
+            );
+
+          if (success) {
+            dataToUpdate.last_synced_at = new Date();
+          }
+        } else {
+          // Create new calendar event
+          const calendarEventId =
+            await this.googleCalendarService.createTaskReminderEvent(
+              userId,
+              taskId,
+              taskTitle,
+              taskDueAt,
+              reminderTime,
+            );
+
+          if (calendarEventId) {
+            dataToUpdate.calendar_event_id = calendarEventId;
+            dataToUpdate.last_synced_at = new Date();
+          }
+        }
+      } else if (
+        !updateData.calendarReminderEnabled &&
+        task.calendar_event_id
+      ) {
+        // Remove from calendar
+        await this.googleCalendarService.deleteTaskReminderEvent(
+          userId,
+          task.calendar_event_id,
+        );
+        dataToUpdate.calendar_event_id = null;
+      }
+    }
+
+    // Update task in database
+    const updatedTask = await this.prisma.tasks.update({
+      where: { id: taskId },
+      data: dataToUpdate,
+    });
+
+    return updatedTask;
+  }
+
+  /**
+   * Get tasks with calendar info for Calendar Tab
+   */
+  async getTasksForCalendar(
+    projectId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<any[]> {
+    const tasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        due_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+        deleted_at: null,
+      },
+      include: {
+        users_tasks_created_byTousers: {
+          select: {
+            name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
+        boards: {
+          select: { name: true },
+        },
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { due_at: 'asc' },
+    });
+
+    return tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      dueAt: task.due_at,
+      priority: task.priority,
+      hasReminder: task.calendar_reminder_enabled,
+      reminderTime: task.calendar_reminder_time,
+      calendarEventId: task.calendar_event_id,
+      lastSyncedAt: task.last_synced_at,
+      creator: task.users_tasks_created_byTousers,
+      boardName: task.boards.name,
+      assignees: task.task_assignees.map((a) => a.users),
+    }));
   }
 }
