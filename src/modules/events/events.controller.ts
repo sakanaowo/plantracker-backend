@@ -98,6 +98,16 @@ export class EventsController {
     );
   }
 
+  @Get(':id/rsvp-stats')
+  @ApiOperation({ summary: 'Get RSVP statistics for event' })
+  @ApiResponse({
+    status: 200,
+    description: 'RSVP stats retrieved successfully',
+  })
+  getRsvpStats(@Param('id') eventId: string) {
+    return this.eventsService.getRsvpStats(eventId);
+  }
+
   // ==================== NEW PROJECT EVENTS ENDPOINTS ====================
   // TODO [TONIGHT]: Test project events with FE and Google Calendar
   // 1. Create event with Google Meet → Check Meet link generated

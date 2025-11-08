@@ -339,6 +339,51 @@ export class TasksService {
         workspaceId: context.workspaceId,
         projectId: context.projectId,
       });
+
+      // 🔔 Send TASK_MOVED notification
+      try {
+        // Get board names for notification
+        const [fromBoard, toBoard] = await Promise.all([
+          this.prisma.boards.findUnique({
+            where: { id: currentTask.board_id },
+            select: { name: true },
+          }),
+          this.prisma.boards.findUnique({
+            where: { id: toBoardId },
+            select: { name: true },
+          }),
+        ]);
+
+        // Get project members to notify (exclude mover)
+        const projectMembers = await this.prisma.project_members.findMany({
+          where: {
+            project_id: context.projectId,
+            user_id: { not: movedBy },
+          },
+          select: { user_id: true },
+        });
+
+        // Get mover info
+        const mover = await this.prisma.users.findUnique({
+          where: { id: movedBy },
+          select: { name: true, email: true },
+        });
+
+        if (projectMembers.length > 0 && mover) {
+          await this.notificationsService.sendTaskMoved({
+            taskId: id,
+            taskTitle: currentTask.title,
+            fromBoard: fromBoard?.name,
+            toBoard: toBoard?.name,
+            movedBy,
+            movedByName: mover.name || mover.email,
+            notifyUserIds: projectMembers.map((m) => m.user_id),
+          });
+        }
+      } catch (error) {
+        // Silently fail notification - don't block task move
+        console.error('Failed to send task moved notification:', error);
+      }
     }
 
     return updatedTask;

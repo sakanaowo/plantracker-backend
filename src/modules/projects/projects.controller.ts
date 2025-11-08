@@ -44,4 +44,9 @@ export class ProjectsController {
   ) {
     return this.svc.update(id, dto, userId);
   }
+
+  @Get(':id/summary')
+  getSummary(@Param('id') projectId: string) {
+    return this.svc.getProjectSummary(projectId);
+  }
 }

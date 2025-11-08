@@ -176,7 +176,9 @@ export class NotificationsService {
       // Check if user is online (WebSocket connected)
       const isOnline = this.notificationsGateway.isUserOnline(data.inviteeId);
       console.log('User online status:', isOnline);
-      console.log(`🎯 Delivery decision: ${isOnline ? 'ONLINE → WebSocket' : 'OFFLINE → FCM'}`);
+      console.log(
+        `🎯 Delivery decision: ${isOnline ? 'ONLINE → WebSocket' : 'OFFLINE → FCM'}`,
+      );
 
       if (isOnline) {
         // User is online → send via WebSocket (real-time)
@@ -193,7 +195,9 @@ export class NotificationsService {
 
         // ALSO send FCM as backup (in case WebSocket message is lost due to race condition)
         // Android will filter it out if app is foreground (show_fcm_notifications = false)
-        console.log('📱 [BACKUP] Also sending FCM (Android will filter if foreground)');
+        console.log(
+          '📱 [BACKUP] Also sending FCM (Android will filter if foreground)',
+        );
         const fcmBackupResult = await this.fcmService.sendNotification({
           userId: data.inviteeId,
           notification: {
@@ -214,11 +218,13 @@ export class NotificationsService {
             actionDecline: 'decline',
           },
         });
-        
+
         if (fcmBackupResult === 'NO_FCM_TOKEN') {
           console.log(`⚠️ [FCM BACKUP] No token, relying on WebSocket only`);
         } else {
-          console.log(`✅ [FCM BACKUP] Sent successfully (will be filtered by Android if foreground)`);
+          console.log(
+            `✅ [FCM BACKUP] Sent successfully (will be filtered by Android if foreground)`,
+          );
         }
 
         // Log as DELIVERED (WebSocket delivered instantly)
@@ -256,11 +262,15 @@ export class NotificationsService {
             actionDecline: 'decline',
           },
         });
-        
+
         // Check FCM result
         if (fcmResult === 'NO_FCM_TOKEN') {
-          console.log(`⚠️ [FCM] User ${data.inviteeId} has NO FCM TOKEN registered!`);
-          this.logger.warn(`User ${data.inviteeId} cannot receive push notifications - no FCM token`);
+          console.log(
+            `⚠️ [FCM] User ${data.inviteeId} has NO FCM TOKEN registered!`,
+          );
+          this.logger.warn(
+            `User ${data.inviteeId} cannot receive push notifications - no FCM token`,
+          );
         } else {
           console.log(`✅ [FCM] Notification sent successfully: ${fcmResult}`);
         }
@@ -369,6 +379,328 @@ export class NotificationsService {
       );
     } catch (error) {
       this.logger.error('Failed to send task comment notification:', error);
+    }
+  }
+
+  /**
+   * Gửi notification khi task được di chuyển
+   * Strategy: WebSocket nếu online, FCM nếu offline
+   */
+  async sendTaskMoved(data: {
+    taskId: string;
+    taskTitle: string;
+    fromProject?: string;
+    toProject?: string;
+    fromBoard?: string;
+    toBoard?: string;
+    movedBy: string;
+    movedByName: string;
+    notifyUserIds: string[];
+  }): Promise<void> {
+    try {
+      // Build movement description
+      let movementDesc = '';
+      if (
+        data.fromProject &&
+        data.toProject &&
+        data.fromProject !== data.toProject
+      ) {
+        movementDesc = `từ project "${data.fromProject}" sang "${data.toProject}"`;
+      } else if (
+        data.fromBoard &&
+        data.toBoard &&
+        data.fromBoard !== data.toBoard
+      ) {
+        movementDesc = `từ board "${data.fromBoard}" sang "${data.toBoard}"`;
+      } else {
+        movementDesc = 'sang vị trí mới';
+      }
+
+      const message = `${data.movedByName} đã di chuyển task "${data.taskTitle}" ${movementDesc}`;
+
+      // Send to all relevant users
+      for (const userId of data.notifyUserIds) {
+        if (userId === data.movedBy) continue; // Skip the mover
+
+        const notificationPayload = {
+          id: crypto.randomUUID(),
+          type: 'TASK_MOVED',
+          title: 'Task Moved',
+          body: message,
+          data: {
+            taskId: data.taskId,
+            taskTitle: data.taskTitle,
+            fromProject: data.fromProject,
+            toProject: data.toProject,
+            fromBoard: data.fromBoard,
+            toBoard: data.toBoard,
+            movedBy: data.movedBy,
+            movedByName: data.movedByName,
+            deeplink: `/tasks/${data.taskId}`,
+          },
+          createdAt: new Date().toISOString(),
+        };
+
+        const isOnline = this.notificationsGateway.isUserOnline(userId);
+
+        if (isOnline) {
+          this.notificationsGateway.emitToUser(
+            userId,
+            'notification',
+            notificationPayload,
+          );
+          await this.logNotification({
+            userId,
+            type: 'TASK_MOVED',
+            taskId: data.taskId,
+            message,
+            status: 'DELIVERED',
+          });
+        } else {
+          await this.fcmService.sendNotification({
+            userId,
+            notification: {
+              title: '📦 Task Moved',
+              body: message,
+            },
+            data: {
+              type: 'TASK_MOVED',
+              taskId: data.taskId,
+              taskTitle: data.taskTitle,
+              fromProject: data.fromProject || '',
+              toProject: data.toProject || '',
+              fromBoard: data.fromBoard || '',
+              toBoard: data.toBoard || '',
+              movedBy: data.movedBy,
+              movedByName: data.movedByName,
+              deeplink: `/tasks/${data.taskId}`,
+            },
+          });
+          await this.logNotification({
+            userId,
+            type: 'TASK_MOVED',
+            taskId: data.taskId,
+            message,
+            status: 'SENT',
+          });
+        }
+      }
+
+      this.logger.log(
+        `Task moved notification sent to ${data.notifyUserIds.length} users`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send task moved notification:', error);
+    }
+  }
+
+  /**
+   * Gửi notification khi được mời vào event
+   * Strategy: WebSocket nếu online, FCM nếu offline
+   */
+  async sendEventInvite(data: {
+    eventId: string;
+    eventTitle: string;
+    eventDescription?: string;
+    startTime: Date;
+    endTime: Date;
+    location?: string;
+    organizerId: string;
+    organizerName: string;
+    meetLink?: string;
+    inviteeIds: string[];
+  }): Promise<void> {
+    try {
+      const startTimeStr = data.startTime.toLocaleString('vi-VN', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+
+      const message = `${data.organizerName} đã mời bạn tham gia sự kiện "${data.eventTitle}" vào ${startTimeStr}`;
+
+      // Send to all invitees
+      for (const userId of data.inviteeIds) {
+        if (userId === data.organizerId) continue; // Skip organizer
+
+        const notificationPayload = {
+          id: crypto.randomUUID(),
+          type: 'EVENT_INVITE',
+          title: 'Event Invitation',
+          body: message,
+          data: {
+            eventId: data.eventId,
+            eventTitle: data.eventTitle,
+            eventDescription: data.eventDescription || '',
+            startTime: data.startTime.toISOString(),
+            endTime: data.endTime.toISOString(),
+            location: data.location || '',
+            organizerId: data.organizerId,
+            organizerName: data.organizerName,
+            meetLink: data.meetLink || '',
+            deeplink: `/events/${data.eventId}`,
+            // Action buttons
+            hasActions: 'true',
+            actionAccept: 'accept',
+            actionDecline: 'decline',
+            actionTentative: 'tentative',
+          },
+          createdAt: new Date().toISOString(),
+        };
+
+        const isOnline = this.notificationsGateway.isUserOnline(userId);
+
+        if (isOnline) {
+          this.notificationsGateway.emitToUser(
+            userId,
+            'notification',
+            notificationPayload,
+          );
+          await this.logNotification({
+            userId,
+            type: 'EVENT_INVITE',
+            message,
+            status: 'DELIVERED',
+          });
+        } else {
+          await this.fcmService.sendNotification({
+            userId,
+            notification: {
+              title: '📅 Event Invitation',
+              body: message,
+            },
+            data: {
+              type: 'EVENT_INVITE',
+              eventId: data.eventId,
+              eventTitle: data.eventTitle,
+              startTime: data.startTime.toISOString(),
+              endTime: data.endTime.toISOString(),
+              location: data.location || '',
+              organizerName: data.organizerName,
+              meetLink: data.meetLink || '',
+              deeplink: `/events/${data.eventId}`,
+              // Action buttons
+              hasActions: 'true',
+              actionAccept: 'accept',
+              actionDecline: 'decline',
+              actionTentative: 'tentative',
+            },
+          });
+          await this.logNotification({
+            userId,
+            type: 'EVENT_INVITE',
+            message,
+            status: 'SENT',
+          });
+        }
+      }
+
+      this.logger.log(
+        `Event invite notification sent to ${data.inviteeIds.length} users`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send event invite notification:', error);
+    }
+  }
+
+  /**
+   * Gửi notification khi event được cập nhật
+   * Strategy: WebSocket nếu online, FCM nếu offline
+   */
+  async sendEventUpdated(data: {
+    eventId: string;
+    eventTitle: string;
+    changes: {
+      time?: boolean;
+      location?: boolean;
+      description?: boolean;
+    };
+    newStartTime?: Date;
+    newEndTime?: Date;
+    newLocation?: string;
+    updatedBy: string;
+    updatedByName: string;
+    participantIds: string[];
+  }): Promise<void> {
+    try {
+      // Build change description
+      const changesList: string[] = [];
+      if (data.changes.time) changesList.push('thời gian');
+      if (data.changes.location) changesList.push('địa điểm');
+      if (data.changes.description) changesList.push('mô tả');
+
+      const changesDesc = changesList.join(', ');
+      const message = `${data.updatedByName} đã cập nhật ${changesDesc} cho sự kiện "${data.eventTitle}"`;
+
+      // Send to all participants
+      for (const userId of data.participantIds) {
+        if (userId === data.updatedBy) continue; // Skip updater
+
+        const notificationPayload = {
+          id: crypto.randomUUID(),
+          type: 'EVENT_UPDATED',
+          title: 'Event Updated',
+          body: message,
+          data: {
+            eventId: data.eventId,
+            eventTitle: data.eventTitle,
+            changes: JSON.stringify(data.changes),
+            newStartTime: data.newStartTime?.toISOString() || '',
+            newEndTime: data.newEndTime?.toISOString() || '',
+            newLocation: data.newLocation || '',
+            updatedBy: data.updatedBy,
+            updatedByName: data.updatedByName,
+            deeplink: `/events/${data.eventId}`,
+          },
+          createdAt: new Date().toISOString(),
+        };
+
+        const isOnline = this.notificationsGateway.isUserOnline(userId);
+
+        if (isOnline) {
+          this.notificationsGateway.emitToUser(
+            userId,
+            'notification',
+            notificationPayload,
+          );
+          await this.logNotification({
+            userId,
+            type: 'EVENT_UPDATED',
+            message,
+            status: 'DELIVERED',
+          });
+        } else {
+          await this.fcmService.sendNotification({
+            userId,
+            notification: {
+              title: '📝 Event Updated',
+              body: message,
+            },
+            data: {
+              type: 'EVENT_UPDATED',
+              eventId: data.eventId,
+              eventTitle: data.eventTitle,
+              changes: JSON.stringify(data.changes),
+              newStartTime: data.newStartTime?.toISOString() || '',
+              newEndTime: data.newEndTime?.toISOString() || '',
+              newLocation: data.newLocation || '',
+              updatedByName: data.updatedByName,
+              deeplink: `/events/${data.eventId}`,
+            },
+          });
+          await this.logNotification({
+            userId,
+            type: 'EVENT_UPDATED',
+            message,
+            status: 'SENT',
+          });
+        }
+      }
+
+      this.logger.log(
+        `Event updated notification sent to ${data.participantIds.length} users`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send event updated notification:', error);
     }
   }
 
@@ -543,8 +875,8 @@ export class NotificationsService {
       task_assigned: 'TASK_ASSIGNED',
       TASK_ASSIGNED: 'TASK_ASSIGNED',
       TASK_MOVED: 'TASK_MOVED',
-      PROJECT_INVITE: 'SYSTEM', // Map to SYSTEM since PROJECT_INVITE not in enum
-      TASK_COMMENT: 'SYSTEM', // Map to SYSTEM since TASK_COMMENT not in enum
+      PROJECT_INVITE: 'PROJECT_INVITE', // ✅ Fixed: Now maps correctly
+      TASK_COMMENT: 'TASK_COMMENT', // ✅ Fixed: Now maps correctly
       EVENT_INVITE: 'EVENT_INVITE',
       EVENT_UPDATED: 'EVENT_UPDATED',
       MEETING_REMINDER: 'MEETING_REMINDER',
@@ -563,6 +895,12 @@ export class NotificationsService {
       SYSTEM: 'Thông báo hệ thống',
       task_assigned: 'Task mới được giao',
       TASK_ASSIGNED: 'Task mới được giao',
+      TASK_MOVED: 'Task được di chuyển',
+      TASK_COMMENT: 'Bình luận mới',
+      PROJECT_INVITE: 'Lời mời Project',
+      EVENT_INVITE: 'Lời mời sự kiện',
+      EVENT_UPDATED: 'Sự kiện cập nhật',
+      MEETING_REMINDER: 'Nhắc nhở cuộc họp',
     };
     return titleMap[type] || 'Thông báo';
   }

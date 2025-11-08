@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { participant_status } from '@prisma/client';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class EventsService {
@@ -10,6 +11,7 @@ export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly googleCalendarService: GoogleCalendarService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createEventDto: any, userId: string) {
@@ -304,6 +306,30 @@ export class EventsService {
     }
 
     this.logger.log(`Created project event: ${event.title}`);
+
+    // 🔔 Send EVENT_INVITE notification to all attendees
+    try {
+      const creator = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      });
+
+      await this.notificationsService.sendEventInvite({
+        eventId: event.id,
+        eventTitle: event.title,
+        eventDescription: event.description || undefined,
+        startTime: event.start_at,
+        endTime: event.end_at,
+        location: event.meet_link || undefined,
+        organizerId: userId,
+        organizerName: creator?.name || creator?.email || 'Unknown',
+        meetLink: meetLink || undefined,
+        inviteeIds: dto.attendeeIds,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send event invite notifications:', error);
+    }
+
     return event;
   }
 
@@ -385,9 +411,49 @@ export class EventsService {
     const updatedEvent = await this.prisma.events.update({
       where: { id: eventId },
       data: updateData,
+      include: {
+        participants: true,
+      },
     });
 
     this.logger.log(`Updated project event: ${updatedEvent.title}`);
+
+    // 🔔 Send EVENT_UPDATED notification to all participants
+    try {
+      const updater = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      });
+
+      const participantIds = updatedEvent.participants
+        .filter((p) => p.user_id)
+        .map((p) => p.user_id!);
+
+      // Detect what changed
+      const changes = {
+        time: !!(dto.date && dto.time),
+        location: !!dto.description,
+        description: !!dto.description,
+      };
+
+      if (participantIds.length > 0) {
+        await this.notificationsService.sendEventUpdated({
+          eventId: updatedEvent.id,
+          eventTitle: updatedEvent.title,
+          changes,
+          newStartTime:
+            dto.date && dto.time ? updatedEvent.start_at : undefined,
+          newEndTime: dto.date && dto.time ? updatedEvent.end_at : undefined,
+          newLocation: dto.description,
+          updatedBy: userId,
+          updatedByName: updater?.name || updater?.email || 'Unknown',
+          participantIds,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to send event updated notifications:', error);
+    }
+
     return updatedEvent;
   }
 
@@ -453,5 +519,74 @@ export class EventsService {
     this.logger.log(`Sending reminder for event: ${event.title}`);
 
     return { success: true };
+  }
+
+  /**
+   * Get RSVP statistics for an event
+   * Returns counts of ACCEPTED, DECLINED, TENTATIVE, INVITED, NO_RESPONSE
+   */
+  async getRsvpStats(eventId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        participants: {
+          select: {
+            status: true,
+            email: true,
+            users: {
+              select: {
+                name: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // Count by status
+    const stats = {
+      total: event.participants.length,
+      accepted: 0,
+      declined: 0,
+      tentative: 0,
+      invited: 0,
+      noResponse: 0,
+    };
+
+    const participantsByStatus: Record<string, any[]> = {
+      ACCEPTED: [],
+      DECLINED: [],
+      TENTATIVE: [],
+      INVITED: [],
+      NO_RESPONSE: [],
+    };
+
+    event.participants.forEach((p) => {
+      const status = p.status || 'NO_RESPONSE';
+
+      if (status === 'ACCEPTED') stats.accepted++;
+      else if (status === 'DECLINED') stats.declined++;
+      else if (status === 'TENTATIVE') stats.tentative++;
+      else if (status === 'INVITED') stats.invited++;
+      else stats.noResponse++;
+
+      participantsByStatus[status].push({
+        email: p.email,
+        name: p.users?.name || p.email.split('@')[0],
+        avatar: p.users?.avatar_url,
+      });
+    });
+
+    return {
+      eventId: event.id,
+      eventTitle: event.title,
+      stats,
+      participants: participantsByStatus,
+    };
   }
 }

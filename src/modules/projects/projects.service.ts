@@ -13,50 +13,58 @@ export class ProjectsService {
   ) {}
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
-    console.log(`📋 listByWorkSpace called - workspace: ${workspaceId}, user: ${userId}`);
-    
+    console.log(
+      `📋 listByWorkSpace called - workspace: ${workspaceId}, user: ${userId}`,
+    );
+
     // Return projects where:
     // 1. In the specified workspace
     // 2. User is workspace owner (can see ALL projects) OR
     // 3. User is explicit project member (can see ONLY those projects)
-    // 
+    //
     // NOTE: Being a workspace member does NOT automatically grant access to projects
     // User must be explicitly added as project member
-    return this.prisma.projects.findMany({
-      where: {
-        workspace_id: workspaceId,
-        OR: [
-          // User is workspace owner - can see ALL projects in workspace
-          {
-            workspaces: {
-              owner_id: userId,
-            },
-          },
-          // User is explicit project member - can see THIS specific project only
-          {
-            project_members: {
-              some: {
-                user_id: userId,
+    return this.prisma.projects
+      .findMany({
+        where: {
+          workspace_id: workspaceId,
+          OR: [
+            // User is workspace owner - can see ALL projects in workspace
+            {
+              workspaces: {
+                owner_id: userId,
               },
             },
+            // User is explicit project member - can see THIS specific project only
+            {
+              project_members: {
+                some: {
+                  user_id: userId,
+                },
+              },
+            },
+          ],
+        },
+        include: {
+          project_members: {
+            where: { user_id: userId },
+            select: { role: true },
           },
-        ],
-      },
-      include: {
-        project_members: {
-          where: { user_id: userId },
-          select: { role: true }
-        }
-      },
-      orderBy: { created_at: 'desc' },
-    }).then(projects => {
-      console.log(`✅ Found ${projects.length} projects for user ${userId} in workspace ${workspaceId}:`);
-      projects.forEach(p => {
-        const userRole = p.project_members[0]?.role || 'WORKSPACE_ACCESS';
-        console.log(`  - ${p.name} (type: ${p.type}, user role: ${userRole})`);
+        },
+        orderBy: { created_at: 'desc' },
+      })
+      .then((projects) => {
+        console.log(
+          `✅ Found ${projects.length} projects for user ${userId} in workspace ${workspaceId}:`,
+        );
+        projects.forEach((p) => {
+          const userRole = p.project_members[0]?.role || 'WORKSPACE_ACCESS';
+          console.log(
+            `  - ${p.name} (type: ${p.type}, user role: ${userRole})`,
+          );
+        });
+        return projects;
       });
-      return projects;
-    });
   }
 
   private generateKeyFromName(name: string): string {
@@ -277,5 +285,99 @@ export class ProjectsService {
     }
 
     return updatedProject;
+  }
+
+  /**
+   * Get project summary statistics (for Summary tab)
+   * Returns simple stats matching the UI screenshot:
+   * - Tasks done in last 7 days
+   * - Tasks updated in last 7 days
+   * - Tasks created in last 7 days
+   * - Tasks due in next 7 days
+   * - Status overview (last 14 days)
+   */
+  async getProjectSummary(projectId: string) {
+    const now = new Date();
+    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const last14Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    // Get all tasks for status overview
+    const allTasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        created_at: { gte: last14Days },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    // Count by status
+    const statusCounts = {
+      TO_DO: 0,
+      IN_PROGRESS: 0,
+      IN_REVIEW: 0,
+      DONE: 0,
+    };
+
+    allTasks.forEach((task) => {
+      if (task.status === 'TO_DO') statusCounts.TO_DO++;
+      else if (task.status === 'IN_PROGRESS') statusCounts.IN_PROGRESS++;
+      else if (task.status === 'IN_REVIEW') statusCounts.IN_REVIEW++;
+      else if (task.status === 'DONE') statusCounts.DONE++;
+    });
+
+    // Tasks done in last 7 days
+    const doneLast7Days = await this.prisma.tasks.count({
+      where: {
+        project_id: projectId,
+        status: 'DONE',
+        updated_at: { gte: last7Days },
+      },
+    });
+
+    // Tasks updated in last 7 days (any status change)
+    const updatedLast7Days = await this.prisma.tasks.count({
+      where: {
+        project_id: projectId,
+        updated_at: { gte: last7Days },
+      },
+    });
+
+    // Tasks created in last 7 days
+    const createdLast7Days = await this.prisma.tasks.count({
+      where: {
+        project_id: projectId,
+        created_at: { gte: last7Days },
+      },
+    });
+
+    // Tasks due in next 7 days
+    const dueNext7Days = await this.prisma.tasks.count({
+      where: {
+        project_id: projectId,
+        due_at: {
+          gte: now,
+          lte: next7Days,
+        },
+      },
+    });
+
+    return {
+      done: doneLast7Days,
+      updated: updatedLast7Days,
+      created: createdLast7Days,
+      due: dueNext7Days,
+      statusOverview: {
+        period: 'last 14 days',
+        total: allTasks.length,
+        toDo: statusCounts.TO_DO,
+        inProgress: statusCounts.IN_PROGRESS,
+        inReview: statusCounts.IN_REVIEW,
+        done: statusCounts.DONE,
+      },
+    };
   }
 }

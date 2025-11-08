@@ -559,6 +559,8 @@ enum notification_status {
 enum notification_type {
   TASK_ASSIGNED
   TASK_MOVED
+  TASK_COMMENT
+  PROJECT_INVITE
   TIME_REMINDER
   EVENT_INVITE
   EVENT_UPDATED

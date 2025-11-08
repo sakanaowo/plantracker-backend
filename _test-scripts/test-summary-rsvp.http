@@ -1,0 +1,101 @@
+### Test Project Summary and RSVP Stats Endpoints
+### Prerequisites: Login and get token first
+
+@baseUrl = http://localhost:3000/api
+@token = YOUR_TOKEN_HERE
+@projectId = YOUR_PROJECT_ID
+@eventId = YOUR_EVENT_ID
+
+### 1. Get Project Summary
+GET {{baseUrl}}/projects/{{projectId}}/summary
+Authorization: Bearer {{token}}
+
+### Response should include:
+# {
+#   "done": 0,              // Tasks completed in last 7 days
+#   "updated": 0,           // Tasks updated in last 7 days
+#   "created": 0,           // Tasks created in last 7 days
+#   "due": 0,               // Tasks due in next 7 days
+#   "statusOverview": {
+#     "period": "last 14 days",
+#     "total": 3,
+#     "toDo": 3,            // TO_DO status
+#     "inProgress": 0,      // IN_PROGRESS status
+#     "inReview": 0,        // IN_REVIEW status
+#     "done": 0             // DONE status
+#   }
+# }
+
+###
+
+### 2. Get RSVP Stats for Event
+GET {{baseUrl}}/events/{{eventId}}/rsvp-stats
+Authorization: Bearer {{token}}
+
+### Response should include:
+# {
+#   "eventId": "uuid",
+#   "eventTitle": "Sprint Planning",
+#   "stats": {
+#     "total": 5,
+#     "accepted": 3,
+#     "declined": 1,
+#     "tentative": 1,
+#     "invited": 0,
+#     "noResponse": 0
+#   },
+#   "participants": {
+#     "ACCEPTED": [
+#       {
+#         "email": "user1@example.com",
+#         "name": "User One",
+#         "avatar": "https://..."
+#       }
+#     ],
+#     "DECLINED": [...],
+#     "TENTATIVE": [...],
+#     "INVITED": [...],
+#     "NO_RESPONSE": [...]
+#   }
+# }
+
+###
+
+### 3. Update Participant RSVP Status (for testing)
+PATCH {{baseUrl}}/events/{{eventId}}/participants/user@example.com/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "ACCEPTED"
+}
+
+### Available status values: ACCEPTED, DECLINED, TENTATIVE
+
+###
+
+### 4. Get Event with Participants
+GET {{baseUrl}}/events/{{eventId}}
+Authorization: Bearer {{token}}
+
+###
+
+### 5. Create Test Event with Participants
+POST {{baseUrl}}/events/projects
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "projectId": "{{projectId}}",
+  "title": "Test Meeting for RSVP",
+  "description": "Testing RSVP stats endpoint",
+  "date": "2025-11-10",
+  "time": "14:00",
+  "duration": 60,
+  "type": "MEETING",
+  "recurrence": "NONE",
+  "attendeeIds": ["user-id-1", "user-id-2", "user-id-3"],
+  "createGoogleMeet": false
+}
+
+###
