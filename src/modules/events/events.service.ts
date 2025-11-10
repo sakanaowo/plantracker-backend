@@ -40,21 +40,14 @@ export class EventsService {
 
     // Create activity log for event creation
     try {
-      await this.activityLogsService.createActivityLog({
-        userId: userId,
+      await this.activityLogsService.logEventCreated({
         projectId: createEventDto.projectId,
-        action: 'CREATED',
-        entityType: 'EVENT',
-        entityId: event.id,
-        entityName: event.title,
-        oldValue: null,
-        newValue: JSON.stringify({
-          title: event.title,
-          startAt: event.start_at,
-          endAt: event.end_at,
-          location: event.location,
-          meetLink: event.meet_link,
-        }),
+        eventId: event.id,
+        userId: userId,
+        eventTitle: event.title,
+        eventType: createEventDto.type || 'MEETING',
+        startAt: event.start_at,
+        endAt: event.end_at,
       });
       this.logger.log(`✅ Activity log created for event: ${event.title}`);
     } catch (error) {
