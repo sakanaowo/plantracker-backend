@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Query, UseGuards, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  Res,
+  BadRequestException,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -123,5 +131,33 @@ export class CalendarController {
   })
   async disconnectIntegration(@CurrentUser('id') userId: string) {
     return await this.googleCalendarService.disconnectIntegration(userId);
+  }
+
+  @Get('sync/from-google')
+  @ApiOperation({ summary: 'Sync events from Google Calendar to project' })
+  @ApiResponse({
+    status: 200,
+    description: 'Events synced successfully from Google Calendar',
+  })
+  async syncFromGoogle(
+    @CurrentUser('id') userId: string,
+    @Query('projectId') projectId: string,
+    @Query('timeMin') timeMin: string,
+    @Query('timeMax') timeMax: string,
+  ) {
+    if (!projectId || !timeMin || !timeMax) {
+      throw new BadRequestException(
+        'Missing required parameters: projectId, timeMin, timeMax',
+      );
+    }
+
+    const events = await this.googleCalendarService.syncEventsFromGoogle(
+      userId,
+      projectId,
+      timeMin,
+      timeMax,
+    );
+
+    return events;
   }
 }

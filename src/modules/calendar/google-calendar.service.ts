@@ -662,6 +662,124 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Sync events from Google Calendar to project database
+   * Fetches events from Google Calendar and saves/updates them in the database
+   */
+  async syncEventsFromGoogle(
+    userId: string,
+    projectId: string,
+    timeMin: string,
+    timeMax: string,
+  ): Promise<any[]> {
+    // 1. Get integration token
+    const integration = await this.prisma.integration_tokens.findFirst({
+      where: {
+        user_id: userId,
+        provider: 'GOOGLE_CALENDAR',
+        status: 'ACTIVE',
+      },
+    });
+
+    if (!integration) {
+      throw new Error('Google Calendar not connected');
+    }
+
+    // 2. Setup OAuth client
+    const oauth2Client = this.createOAuth2Client();
+    oauth2Client.setCredentials({
+      access_token: integration.access_token,
+      refresh_token: integration.refresh_token,
+    });
+
+    // 3. Fetch from Google Calendar
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const googleEvents = response.data.items || [];
+
+    // 4. Sync to database
+    const syncedEvents: any[] = [];
+    for (const googleEvent of googleEvents) {
+      if (!googleEvent.id || !googleEvent.start || !googleEvent.end) {
+        continue;
+      }
+
+      const startTime = googleEvent.start.dateTime || googleEvent.start.date;
+      const endTime = googleEvent.end.dateTime || googleEvent.end.date;
+
+      if (!startTime || !endTime) {
+        continue;
+      }
+
+      try {
+        // Check if event already exists
+        const existingMapping = await this.prisma.external_event_map.findFirst({
+          where: {
+            provider: 'GOOGLE_CALENDAR',
+            provider_event_id: googleEvent.id,
+          },
+          include: {
+            events: true,
+          },
+        });
+
+        let event;
+        if (existingMapping) {
+          // Update existing event
+          event = await this.prisma.events.update({
+            where: { id: existingMapping.event_id },
+            data: {
+              title: googleEvent.summary || 'Untitled Event',
+              start_at: new Date(startTime),
+              end_at: new Date(endTime),
+              location: googleEvent.location || null,
+              updated_at: new Date(),
+            },
+          });
+        } else {
+          // Create new event
+          event = await this.prisma.events.create({
+            data: {
+              project_id: projectId,
+              title: googleEvent.summary || 'Untitled Event',
+              start_at: new Date(startTime),
+              end_at: new Date(endTime),
+              location: googleEvent.location || null,
+              created_by: userId,
+            },
+          });
+
+          // Create mapping
+          await this.prisma.external_event_map.create({
+            data: {
+              event_id: event.id,
+              provider: 'GOOGLE_CALENDAR',
+              provider_event_id: googleEvent.id,
+              html_link: googleEvent.htmlLink || null,
+              etag: googleEvent.etag || null,
+              last_synced_at: new Date(),
+            },
+          });
+        }
+
+        syncedEvents.push(event);
+      } catch (error) {
+        this.logger.error(
+          `Error syncing event ${googleEvent.id}: ${error.message}`,
+        );
+      }
+    }
+
+    return syncedEvents;
+  }
+
+  /**
    * Get calendar events for date range (for Calendar Tab)
    */
   async getCalendarEventsForDateRange(
