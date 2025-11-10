@@ -645,8 +645,10 @@ export class ActivityLogsService {
    * Get activity feed for a specific project
    */
   async getProjectActivityFeed(projectId: string, limit = 100) {
-    console.log(`📋 Getting activity feed for project: ${projectId}, limit: ${limit}`);
-    
+    console.log(
+      `📋 Getting activity feed for project: ${projectId}, limit: ${limit}`,
+    );
+
     const logs = await this.prisma.activity_logs.findMany({
       where: { project_id: projectId },
       include: {
@@ -661,12 +663,16 @@ export class ActivityLogsService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
-    
-    console.log(`✅ Found ${logs.length} activity logs for project ${projectId}`);
+
+    console.log(
+      `✅ Found ${logs.length} activity logs for project ${projectId}`,
+    );
     logs.forEach((log, index) => {
-      console.log(`  ${index + 1}. ${log.action} ${log.entity_type} by ${log.users.name} - ${log.entity_name}`);
+      console.log(
+        `  ${index + 1}. ${log.action} ${log.entity_type} by ${log.users.name} - ${log.entity_name}`,
+      );
     });
-    
+
     return logs;
   }
 
