@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import { GoogleAuthService } from './google-auth.service';
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
+import { Public } from '../../auth/public.decorator';
 
 @ApiTags('Google Calendar Authentication')
 @Controller('auth/google')
@@ -20,6 +21,7 @@ export class GoogleAuthController {
   }
 
   @Get('callback')
+  @Public() // Allow Google to call this endpoint without authentication
   @ApiOperation({ summary: 'Handle Google OAuth callback' })
   async handleCallback(
     @Query('code') code: string,
