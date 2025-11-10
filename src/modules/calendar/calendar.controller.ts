@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiTags,
@@ -50,18 +51,29 @@ export class CalendarController {
     return { authUrl };
   }
 
-  @Post('google/callback')
+  @Get('google/callback')
   @ApiOperation({ summary: 'Handle Google OAuth callback' })
   @ApiResponse({
-    status: 200,
-    description: 'OAuth callback processed successfully',
-    type: CallbackResponseDto,
+    status: 302,
+    description: 'Redirect to mobile app deep link',
   })
   async handleGoogleCallback(
     @Query('code') code: string,
     @Query('state') userId: string,
+    @Res() res: Response,
   ) {
-    return await this.googleCalendarService.handleOAuthCallback(code, userId);
+    try {
+      const result = await this.googleCalendarService.handleOAuthCallback(code, userId);
+      
+      // Redirect về Android app với Deep Link
+      if (result.success) {
+        return res.redirect(302, `plantracker://calendar/connected?status=success&userId=${userId}`);
+      } else {
+        return res.redirect(302, `plantracker://calendar/connected?status=error&message=${encodeURIComponent('Failed to connect')}`);
+      }
+    } catch (error) {
+      return res.redirect(302, `plantracker://calendar/connected?status=error&message=${encodeURIComponent(error.message || 'Unknown error')}`);
+    }
   }
 
   @Post('sync')
