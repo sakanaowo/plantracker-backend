@@ -63,16 +63,28 @@ export class CalendarController {
     @Res() res: Response,
   ) {
     try {
-      const result = await this.googleCalendarService.handleOAuthCallback(code, userId);
-      
+      const result = await this.googleCalendarService.handleOAuthCallback(
+        code,
+        userId,
+      );
+
       // Redirect về Android app với Deep Link
       if (result.success) {
-        return res.redirect(302, `plantracker://calendar/connected?status=success&userId=${userId}`);
+        return res.redirect(
+          302,
+          `plantracker://calendar/connected?status=success&userId=${userId}`,
+        );
       } else {
-        return res.redirect(302, `plantracker://calendar/connected?status=error&message=${encodeURIComponent('Failed to connect')}`);
+        return res.redirect(
+          302,
+          `plantracker://calendar/connected?status=error&message=${encodeURIComponent('Failed to connect')}`,
+        );
       }
     } catch (error) {
-      return res.redirect(302, `plantracker://calendar/connected?status=error&message=${encodeURIComponent(error.message || 'Unknown error')}`);
+      return res.redirect(
+        302,
+        `plantracker://calendar/connected?status=error&message=${encodeURIComponent(error.message || 'Unknown error')}`,
+      );
     }
   }
 
