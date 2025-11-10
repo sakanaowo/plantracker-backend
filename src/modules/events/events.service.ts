@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { participant_status } from '@prisma/client';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
 @Injectable()
 export class EventsService {
@@ -12,6 +13,7 @@ export class EventsService {
     private readonly prisma: PrismaService,
     private readonly googleCalendarService: GoogleCalendarService,
     private readonly notificationsService: NotificationsService,
+    private readonly activityLogsService: ActivityLogsService,
   ) {}
 
   async create(createEventDto: any, userId: string) {
@@ -306,6 +308,21 @@ export class EventsService {
     }
 
     this.logger.log(`Created project event: ${event.title}`);
+
+    // ✅ Log event creation activity
+    try {
+      await this.activityLogsService.logEventCreated({
+        projectId: dto.projectId,
+        eventId: event.id,
+        userId,
+        eventTitle: event.title,
+        eventType: dto.type,
+        startAt: event.start_at,
+        endAt: event.end_at,
+      });
+    } catch (error) {
+      this.logger.error('Failed to log event creation activity:', error);
+    }
 
     // 🔔 Send EVENT_INVITE notification to all attendees
     try {

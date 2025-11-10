@@ -296,7 +296,36 @@ export class ProjectsService {
    * - Tasks due in next 7 days
    * - Status overview (last 14 days)
    */
-  async getProjectSummary(projectId: string) {
+  async getProjectSummary(projectId: string, userId: string) {
+    // Validate user has access to this project
+    const project = await this.prisma.projects.findFirst({
+      where: {
+        id: projectId,
+        OR: [
+          // User is workspace owner
+          {
+            workspaces: {
+              owner_id: userId,
+            },
+          },
+          // User is project member
+          {
+            project_members: {
+              some: {
+                user_id: userId,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    if (!project) {
+      throw new ConflictException(
+        'Project not found or you do not have access to this project',
+      );
+    }
+
     const now = new Date();
     const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);

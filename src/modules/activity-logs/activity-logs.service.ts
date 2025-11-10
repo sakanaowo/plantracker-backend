@@ -797,4 +797,31 @@ export class ActivityLogsService {
       },
     };
   }
+
+  /**
+   * Log when an event is created in a project
+   */
+  async logEventCreated(params: {
+    projectId: string;
+    eventId: string;
+    userId: string;
+    eventTitle: string;
+    eventType: 'MEETING' | 'MILESTONE' | 'OTHER';
+    startAt: Date;
+    endAt: Date;
+  }) {
+    return this.log({
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'CREATED',
+      entityType: 'EVENT',
+      entityId: params.eventId,
+      entityName: params.eventTitle,
+      metadata: {
+        type: params.eventType,
+        startAt: params.startAt,
+        endAt: params.endAt,
+      },
+    });
+  }
 }

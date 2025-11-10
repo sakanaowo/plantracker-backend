@@ -46,7 +46,10 @@ export class ProjectsController {
   }
 
   @Get(':id/summary')
-  getSummary(@Param('id') projectId: string) {
-    return this.svc.getProjectSummary(projectId);
+  getSummary(
+    @Param('id') projectId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.getProjectSummary(projectId, userId);
   }
 }
