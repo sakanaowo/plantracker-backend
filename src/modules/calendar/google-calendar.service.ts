@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -38,8 +44,6 @@ export class GoogleCalendarService {
     });
   }
 
-  // TODO [TONIGHT]: Test OAuth callback with real authorization code from Google
-  // Verify tokens are saved correctly to database
   async handleOAuthCallback(code: string, userId: string) {
     const oauth2Client = this.createOAuth2Client();
 
@@ -675,6 +679,27 @@ export class GoogleCalendarService {
       `📅 Syncing events for project ${projectId} from ${timeMin} to ${timeMax}`,
     );
 
+    // 0. Validate project exists and user has access
+    const project = await this.prisma.projects.findFirst({
+      where: {
+        id: projectId,
+        project_members: {
+          some: {
+            user_id: userId,
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      this.logger.error(
+        `❌ Project ${projectId} not found or user ${userId} has no access`,
+      );
+      throw new NotFoundException(
+        'Project not found or you do not have access to this project',
+      );
+    }
+
     // 1. Get integration token
     const integration = await this.prisma.integration_tokens.findFirst({
       where: {
@@ -688,7 +713,9 @@ export class GoogleCalendarService {
       this.logger.error(
         `❌ No Google Calendar integration found for user ${userId}`,
       );
-      throw new Error('Google Calendar not connected');
+      throw new BadRequestException(
+        'Google Calendar not connected. Please connect your Google Calendar first.',
+      );
     }
 
     this.logger.log(
@@ -739,12 +766,15 @@ export class GoogleCalendarService {
         }
 
         try {
-          // Check if event already exists
+          // Check if event already exists FOR THIS USER
           const existingMapping =
             await this.prisma.external_event_map.findFirst({
               where: {
                 provider: 'GOOGLE_CALENDAR',
                 provider_event_id: googleEvent.id,
+                events: {
+                  created_by: userId, // ← Chỉ check event của user này
+                },
               },
               include: {
                 events: true,
