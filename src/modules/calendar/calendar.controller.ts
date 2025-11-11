@@ -151,13 +151,45 @@ export class CalendarController {
       );
     }
 
-    const events = await this.googleCalendarService.syncEventsFromGoogle(
-      userId,
-      projectId,
-      timeMin,
-      timeMax,
-    );
+    try {
+      const events = await this.googleCalendarService.syncEventsFromGoogle(
+        userId,
+        projectId,
+        timeMin,
+        timeMax,
+      );
 
-    return events;
+      return {
+        success: true,
+        events,
+        count: events.length,
+      };
+    } catch (err: unknown) {
+      const error = err as Error;
+      // ✅ FIX: Handle errors gracefully and return empty array if user has no Google Calendar
+      if (error.message?.includes('Google Calendar not connected')) {
+        return {
+          success: false,
+          events: [],
+          count: 0,
+          message:
+            'Google Calendar not connected. Please connect your Google Calendar first.',
+        };
+      }
+
+      if (error.message?.includes('Project not found')) {
+        throw new BadRequestException(error.message);
+      }
+
+      // Log error and return empty result instead of 500
+      console.error('Calendar sync error:', error);
+      return {
+        success: false,
+        events: [],
+        count: 0,
+        message:
+          error.message || 'Failed to sync events from Google Calendar',
+      };
+    }
   }
 }
