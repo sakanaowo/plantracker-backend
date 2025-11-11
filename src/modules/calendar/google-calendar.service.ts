@@ -528,7 +528,10 @@ export class GoogleCalendarService {
           dateTime: eventData.endAt.toISOString(),
           timeZone: 'Asia/Ho_Chi_Minh',
         },
-        attendees: eventData.attendeeEmails.map((email) => ({ email })),
+        attendees: eventData.attendeeEmails.map((email) => ({
+          email,
+          responseStatus: 'needsAction', // Mark as pending invitation
+        })),
         reminders: {
           useDefault: false,
           overrides: [
@@ -536,6 +539,9 @@ export class GoogleCalendarService {
             { method: 'email', minutes: 60 },
           ],
         },
+        guestsCanModify: false,
+        guestsCanInviteOthers: false,
+        guestsCanSeeOtherGuests: true,
       };
 
       // Add conference data for Google Meet
@@ -552,7 +558,8 @@ export class GoogleCalendarService {
         calendarId: 'primary',
         requestBody,
         conferenceDataVersion: eventData.createMeet ? 1 : 0,
-        sendUpdates: 'all', // Send email notifications to attendees
+        sendUpdates: 'all', // ✅ Send email to ALL attendees
+        sendNotifications: true, // ✅ Legacy parameter - still needed for email delivery
       });
 
       const meetLink = googleEvent.data.conferenceData?.entryPoints?.find(
@@ -619,6 +626,7 @@ export class GoogleCalendarService {
       if (eventData.attendeeEmails) {
         updates.attendees = eventData.attendeeEmails.map((email) => ({
           email,
+          responseStatus: 'needsAction', // Mark as pending invitation
         }));
       }
 
@@ -626,7 +634,8 @@ export class GoogleCalendarService {
         calendarId: 'primary',
         eventId: calendarEventId,
         requestBody: updates,
-        sendUpdates: 'all',
+        sendUpdates: 'all', // ✅ Send email to ALL attendees
+        sendNotifications: true, // ✅ Legacy parameter for email delivery
       });
 
       this.logger.log(`Updated project event: ${calendarEventId}`);

@@ -281,7 +281,10 @@ export class MeetingSchedulerService {
         dateTime: timeSlot.end,
         timeZone: 'Asia/Ho_Chi_Minh',
       },
-      attendees: attendees.map((a) => ({ email: a.email })),
+      attendees: attendees.map((a) => ({
+        email: a.email,
+        responseStatus: 'needsAction', // Mark as pending invitation
+      })),
       conferenceData: {
         createRequest: {
           requestId: `meeting-${Date.now()}`,
@@ -295,13 +298,17 @@ export class MeetingSchedulerService {
           { method: 'popup', minutes: 30 }, // 30 min before
         ],
       },
+      guestsCanModify: false,
+      guestsCanInviteOthers: false,
+      guestsCanSeeOtherGuests: true,
     };
 
     const response = await calendar.events.insert({
       calendarId: 'primary',
       requestBody: event,
       conferenceDataVersion: 1,
-      sendUpdates: 'all', // Send email invites to all attendees
+      sendUpdates: 'all', // ✅ Send email invites to ALL attendees
+      sendNotifications: true, // ✅ Legacy parameter for email delivery
     });
 
     this.logger.log(
