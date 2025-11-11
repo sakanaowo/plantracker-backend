@@ -532,12 +532,10 @@ export class GoogleCalendarService {
           email,
           responseStatus: 'needsAction', // Mark as pending invitation
         })),
+        // ✅ Use default reminders from user's calendar settings
+        // This ensures notifications work according to each user's preferences
         reminders: {
-          useDefault: false,
-          overrides: [
-            { method: 'popup', minutes: 10 },
-            { method: 'email', minutes: 60 },
-          ],
+          useDefault: true, // ✅ Use user's default notification settings
         },
         guestsCanModify: false,
         guestsCanInviteOthers: false,

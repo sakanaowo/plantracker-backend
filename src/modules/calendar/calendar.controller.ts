@@ -187,8 +187,7 @@ export class CalendarController {
         success: false,
         events: [],
         count: 0,
-        message:
-          error.message || 'Failed to sync events from Google Calendar',
+        message: error.message || 'Failed to sync events from Google Calendar',
       };
     }
   }
