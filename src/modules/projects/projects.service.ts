@@ -1,6 +1,6 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { projects } from '@prisma/client'; // type do Prisma generate
+import { projects, Prisma } from '@prisma/client'; // type do Prisma generate
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
@@ -11,6 +11,67 @@ export class ProjectsService {
     private prisma: PrismaService,
     private activityLogsService: ActivityLogsService,
   ) {}
+
+  /**
+   * Get all projects accessible by a user (across all workspaces)
+   */
+  async listAllUserProjects(userId: string) {
+    console.log(`📋 listAllUserProjects called - user: ${userId}`);
+
+    const projects = await this.prisma.projects.findMany({
+      where: {
+        OR: [
+          // User owns the workspace containing the project
+          {
+            workspaces: {
+              owner_id: userId,
+            },
+          },
+          // User is a member of the workspace
+          {
+            workspaces: {
+              memberships: {
+                some: {
+                  user_id: userId,
+                },
+              },
+            },
+          },
+          // User is a project member
+          {
+            project_members: {
+              some: {
+                user_id: userId,
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        project_members: {
+          where: { user_id: userId },
+          select: { role: true },
+        },
+        workspaces: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    console.log(`✅ Found ${projects.length} projects for user ${userId}`);
+    projects.forEach((p: any) => {
+      const userRole = p.project_members[0]?.role || 'WORKSPACE_ACCESS';
+      console.log(
+        `  - ${p.name} (workspace: ${p.workspaces?.name}, role: ${userRole})`,
+      );
+    });
+
+    return projects as any;
+  }
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
     console.log(

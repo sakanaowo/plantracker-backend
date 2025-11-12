@@ -23,7 +23,12 @@ export class ProjectsController {
     @Query('workspaceId') workspaceId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.svc.listByWorkSpace(workspaceId, userId);
+    // If workspaceId is provided, filter by workspace
+    // If not, return all projects the user has access to
+    if (workspaceId) {
+      return this.svc.listByWorkSpace(workspaceId, userId);
+    }
+    return this.svc.listAllUserProjects(userId);
   }
 
   @Get(':id/members')
