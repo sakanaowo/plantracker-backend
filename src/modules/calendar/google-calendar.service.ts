@@ -690,11 +690,22 @@ export class GoogleCalendarService {
     const project = await this.prisma.projects.findFirst({
       where: {
         id: projectId,
-        project_members: {
-          some: {
-            user_id: userId,
+        OR: [
+          // User is workspace owner
+          {
+            workspaces: {
+              owner_id: userId,
+            },
           },
-        },
+          // User is project member
+          {
+            project_members: {
+              some: {
+                user_id: userId,
+              },
+            },
+          },
+        ],
       },
     });
 

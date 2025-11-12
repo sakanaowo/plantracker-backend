@@ -27,16 +27,6 @@ export class ProjectsService {
               owner_id: userId,
             },
           },
-          // User is a member of the workspace
-          {
-            workspaces: {
-              memberships: {
-                some: {
-                  user_id: userId,
-                },
-              },
-            },
-          },
           // User is a project member
           {
             project_members: {
@@ -71,6 +61,56 @@ export class ProjectsService {
     });
 
     return projects as any;
+  }
+
+  /**
+   * Get a single project by ID (with permission check)
+   */
+  async getProjectById(projectId: string, userId: string) {
+    console.log(`📋 getProjectById called - project: ${projectId}, user: ${userId}`);
+
+    const project = await this.prisma.projects.findFirst({
+      where: {
+        id: projectId,
+        OR: [
+          // User is workspace owner
+          {
+            workspaces: {
+              owner_id: userId,
+            },
+          },
+          // User is project member
+          {
+            project_members: {
+              some: {
+                user_id: userId,
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        project_members: {
+          where: { user_id: userId },
+          select: { role: true },
+        },
+        workspaces: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new ConflictException(
+        'Project not found or you do not have access to this project',
+      );
+    }
+
+    console.log(`✅ Found project: ${project.name}`);
+    return project;
   }
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {

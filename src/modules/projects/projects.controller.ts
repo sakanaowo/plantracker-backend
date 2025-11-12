@@ -31,6 +31,11 @@ export class ProjectsController {
     return this.svc.listAllUserProjects(userId);
   }
 
+  @Get(':id')
+  getById(@Param('id') projectId: string, @CurrentUser('id') userId: string) {
+    return this.svc.getProjectById(projectId, userId);
+  }
+
   @Get(':id/members')
   getMembers(@Param('id') projectId: string) {
     return this.svc.getMembers(projectId);
