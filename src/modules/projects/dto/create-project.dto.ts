@@ -14,9 +14,10 @@ export class CreateProjectDto {
   @Length(1, 120)
   name!: string;
 
+  @IsOptional() // ✅ Make workspaceId optional - backend will auto-find personal workspace
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string; // ✅ camelCase - Frontend sends this
+  workspaceId?: string; // Optional - if not provided, use user's personal workspace
 
   @IsOptional()
   @IsString()

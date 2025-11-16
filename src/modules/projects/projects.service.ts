@@ -1,4 +1,10 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { projects, Prisma } from '@prisma/client'; // type do Prisma generate
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -67,7 +73,9 @@ export class ProjectsService {
    * Get a single project by ID (with permission check)
    */
   async getProjectById(projectId: string, userId: string) {
-    console.log(`📋 getProjectById called - project: ${projectId}, user: ${userId}`);
+    console.log(
+      `📋 getProjectById called - project: ${projectId}, user: ${userId}`,
+    );
 
     const project = await this.prisma.projects.findFirst({
       where: {
@@ -216,12 +224,65 @@ export class ProjectsService {
   }
 
   async create(dto: CreateProjectDto, createdBy?: string): Promise<projects> {
+    // ✅ Auto-find user's default workspace if workspaceId not provided
+    let workspaceId = dto.workspaceId;
+
+    if (!workspaceId && createdBy) {
+      // Find first workspace where user is owner
+      const ownedWorkspace = await this.prisma.workspaces.findFirst({
+        where: {
+          owner_id: createdBy,
+        },
+        orderBy: {
+          created_at: 'asc', // Get the oldest (likely personal) workspace
+        },
+      });
+
+      if (!ownedWorkspace) {
+        throw new NotFoundException(
+          'No workspace found for user. Please create a workspace first.',
+        );
+      }
+
+      workspaceId = ownedWorkspace.id;
+    }
+
+    if (!workspaceId) {
+      throw new BadRequestException('Workspace ID is required');
+    }
+
+    // ✅ SECURITY: Check workspace ownership/membership before allowing project creation
+    if (createdBy) {
+      const workspace = await this.prisma.workspaces.findFirst({
+        where: {
+          id: workspaceId,
+          OR: [
+            { owner_id: createdBy }, // User is workspace owner
+            {
+              memberships: {
+                some: {
+                  user_id: createdBy,
+                  role: { in: ['OWNER', 'ADMIN'] }, // Or workspace admin
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      if (!workspace) {
+        throw new ForbiddenException(
+          'You do not have permission to create projects in this workspace',
+        );
+      }
+    }
+
     let projectKey: string;
 
     if (dto.key) {
       const existing = await this.prisma.projects.findFirst({
         where: {
-          workspace_id: dto.workspaceId,
+          workspace_id: workspaceId,
           key: dto.key,
         },
       });
@@ -235,14 +296,14 @@ export class ProjectsService {
       projectKey = dto.key;
     } else {
       const baseKey = this.generateKeyFromName(dto.name);
-      projectKey = await this.ensureUniqueKey(dto.workspaceId, baseKey);
+      projectKey = await this.ensureUniqueKey(workspaceId, baseKey);
     }
 
     const project = await this.prisma.$transaction(async (tx) => {
       const newProject = await tx.projects.create({
         data: {
           name: dto.name,
-          workspace_id: dto.workspaceId,
+          workspace_id: workspaceId,
           key: projectKey,
           description: dto.description ?? null,
           type: dto.type ?? 'PERSONAL', // Default to PERSONAL if not specified
@@ -269,7 +330,7 @@ export class ProjectsService {
     // Log project creation
     if (createdBy) {
       await this.activityLogsService.logProjectCreated({
-        workspaceId: dto.workspaceId,
+        workspaceId: workspaceId,
         projectId: project.id,
         userId: createdBy,
         projectName: project.name,
