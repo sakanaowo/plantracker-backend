@@ -849,13 +849,27 @@ export class TasksService {
       calendarReminderTime?: number;
     },
   ): Promise<tasks> {
+    console.log('\n🟢 [CALENDAR-SYNC-SERVICE] Starting update...');
+    console.log('  Task ID:', taskId);
+    console.log('  User ID:', userId);
+
     const task = await this.prisma.tasks.findUnique({
       where: { id: taskId },
     });
 
     if (!task) {
+      console.log('❌ [CALENDAR-SYNC-SERVICE] Task not found!');
       throw new NotFoundException(`Task with ID ${taskId} not found`);
     }
+
+    console.log('  Current task state:');
+    console.log(
+      '    - calendar_reminder_enabled:',
+      task.calendar_reminder_enabled,
+    );
+    console.log('    - calendar_reminder_time:', task.calendar_reminder_time);
+    console.log('    - calendar_event_id:', task.calendar_event_id);
+    console.log('    - last_synced_at:', task.last_synced_at);
 
     // Check if user has Google Calendar connected
     const integration = await this.prisma.integration_tokens.findFirst({
@@ -867,6 +881,10 @@ export class TasksService {
     });
 
     const hasCalendarIntegration = !!integration;
+    console.log(
+      '  Google Calendar integration:',
+      hasCalendarIntegration ? '✅ Connected' : '❌ Not connected',
+    );
 
     // Prepare update data
     const dataToUpdate: any = {};
@@ -897,7 +915,9 @@ export class TasksService {
         updateData.calendarReminderTime || task.calendar_reminder_time || 30;
 
       if (updateData.calendarReminderEnabled && taskDueAt) {
+        console.log('  📅 Syncing to Google Calendar...');
         if (task.calendar_event_id) {
+          console.log('    → Updating existing event:', task.calendar_event_id);
           // Update existing calendar event
           const success =
             await this.googleCalendarService.updateTaskReminderEvent(
@@ -910,8 +930,12 @@ export class TasksService {
 
           if (success) {
             dataToUpdate.last_synced_at = new Date();
+            console.log('    ✅ Event updated successfully');
+          } else {
+            console.log('    ❌ Event update failed');
           }
         } else {
+          console.log('    → Creating new calendar event');
           // Create new calendar event
           const calendarEventId =
             await this.googleCalendarService.createTaskReminderEvent(
@@ -925,26 +949,48 @@ export class TasksService {
           if (calendarEventId) {
             dataToUpdate.calendar_event_id = calendarEventId;
             dataToUpdate.last_synced_at = new Date();
+            console.log('    ✅ Event created:', calendarEventId);
+          } else {
+            console.log('    ❌ Event creation failed');
           }
         }
       } else if (
         !updateData.calendarReminderEnabled &&
         task.calendar_event_id
       ) {
+        console.log('  🗑️  Removing from Google Calendar...');
+        console.log('    → Deleting event:', task.calendar_event_id);
         // Remove from calendar
         await this.googleCalendarService.deleteTaskReminderEvent(
           userId,
           task.calendar_event_id,
         );
         dataToUpdate.calendar_event_id = null;
+        console.log('    ✅ Event deleted');
       }
     }
 
     // Update task in database
+    console.log('  💾 Updating database with:');
+    console.log('    ', JSON.stringify(dataToUpdate, null, 2));
+
     const updatedTask = await this.prisma.tasks.update({
       where: { id: taskId },
       data: dataToUpdate,
     });
+
+    console.log('\n✅ [CALENDAR-SYNC-SERVICE] Update complete!');
+    console.log('  Final state:');
+    console.log(
+      '    - calendar_reminder_enabled:',
+      updatedTask.calendar_reminder_enabled,
+    );
+    console.log(
+      '    - calendar_reminder_time:',
+      updatedTask.calendar_reminder_time,
+    );
+    console.log('    - calendar_event_id:', updatedTask.calendar_event_id);
+    console.log('    - last_synced_at:', updatedTask.last_synced_at);
 
     return updatedTask;
   }

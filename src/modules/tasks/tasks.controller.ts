@@ -173,12 +173,31 @@ export class TasksController {
     },
     @CurrentUser('id') userId: string,
   ) {
-    return this.svc.updateTaskWithCalendarSync(userId, taskId, {
+    console.log('\n🔵 [CALENDAR-SYNC-CONTROLLER] Received request:');
+    console.log('  User ID:', userId);
+    console.log('  Task ID:', taskId);
+    console.log('  Enabled:', dto.calendarReminderEnabled);
+    console.log('  Reminder Time:', dto.calendarReminderTime, 'minutes');
+    console.log('  Title:', dto.title || '(not updated)');
+    console.log('  Due Date:', dto.dueAt || '(not updated)');
+
+    const result = await this.svc.updateTaskWithCalendarSync(userId, taskId, {
       calendarReminderEnabled: dto.calendarReminderEnabled,
       calendarReminderTime: dto.calendarReminderTime,
       title: dto.title,
       dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
     });
+
+    console.log('\n✅ [CALENDAR-SYNC-CONTROLLER] Response:');
+    console.log(
+      '  calendar_reminder_enabled:',
+      result.calendar_reminder_enabled,
+    );
+    console.log('  calendar_reminder_time:', result.calendar_reminder_time);
+    console.log('  calendar_event_id:', result.calendar_event_id);
+    console.log('  last_synced_at:', result.last_synced_at);
+
+    return result;
   }
 
   // TODO [TONIGHT]: Test calendar view with FE
