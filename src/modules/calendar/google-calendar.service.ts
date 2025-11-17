@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { google } from 'googleapis';
+import { google, calendar_v3 } from 'googleapis';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -400,7 +400,7 @@ export class GoogleCalendarService {
 
       console.log('  Creating event at:', reminderTime.toISOString());
 
-      const googleEvent = await calendar.events.insert({
+      const googleEvent: calendar_v3.Schema$Event = (await calendar.events.insert({
         calendarId: 'primary',
         requestBody: {
           summary: `⏰ Nhắc nhở: ${title}`,
@@ -422,12 +422,12 @@ export class GoogleCalendarService {
           },
           colorId: '11', // Red color for reminders
         },
-      });
+      })).data;
 
       console.log('✅ [CALENDAR-SERVICE] Event created successfully!');
-      console.log('  Event ID:', googleEvent.data.id);
-      this.logger.log(`Created task reminder event: ${googleEvent.data.id}`);
-      return googleEvent.data.id || null;
+      console.log('  Event ID:', googleEvent.id);
+      this.logger.log(`Created task reminder event: ${googleEvent.id}`);
+      return googleEvent.id || null;
     } catch (error) {
       console.log('❌ [CALENDAR-SERVICE] Failed to create event');
       console.log('  Error:', error.message);
