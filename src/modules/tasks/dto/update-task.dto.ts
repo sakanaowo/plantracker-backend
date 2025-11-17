@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsDateString,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { priority, issue_type, issue_status } from '@prisma/client';
 
@@ -15,6 +16,10 @@ export class UpdateTaskDto {
   // Date fields
   @IsOptional() @IsDateString() dueAt?: string;
   @IsOptional() @IsDateString() startAt?: string;
+
+  // Calendar sync fields
+  @IsOptional() @IsBoolean() calendarReminderEnabled?: boolean;
+  @IsOptional() @IsNumber() calendarReminderTime?: number;
 
   // Enum fields
   @IsOptional() @IsEnum(priority) priority?: priority;

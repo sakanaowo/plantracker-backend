@@ -218,6 +218,8 @@ export class TasksService {
       storyPoints?: number;
       originalEstimateSec?: number;
       remainingEstimateSec?: number;
+      calendarReminderEnabled?: boolean;
+      calendarReminderTime?: number;
       updatedBy?: string;
     },
   ): Promise<tasks> {
@@ -269,6 +271,12 @@ export class TasksService {
       updateData.original_estimate_sec = dto.originalEstimateSec;
     if (dto.remainingEstimateSec !== undefined)
       updateData.remaining_estimate_sec = dto.remainingEstimateSec;
+
+    // Calendar sync fields
+    if (dto.calendarReminderEnabled !== undefined)
+      updateData.calendar_reminder_enabled = dto.calendarReminderEnabled;
+    if (dto.calendarReminderTime !== undefined)
+      updateData.calendar_reminder_time = dto.calendarReminderTime;
 
     const updatedTask = await this.prisma.tasks.update({
       where: { id },
