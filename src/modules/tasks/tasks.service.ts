@@ -207,6 +207,17 @@ export class TasksService {
       title?: string;
       description?: string;
       position?: number;
+      dueAt?: string;
+      startAt?: string;
+      priority?: string;
+      type?: string;
+      status?: string;
+      sprintId?: string;
+      epicId?: string;
+      parentTaskId?: string;
+      storyPoints?: number;
+      originalEstimateSec?: number;
+      remainingEstimateSec?: number;
       updatedBy?: string;
     },
   ): Promise<tasks> {
@@ -225,18 +236,50 @@ export class TasksService {
       throw new NotFoundException(`Task with ID ${id} not found`);
     }
 
+    // Prepare update data with type conversions
+    const updateData: any = {};
+
+    if (dto.title !== undefined) updateData.title = dto.title;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.position !== undefined) updateData.position = dto.position;
+
+    // Date fields - convert string to Date
+    if (dto.dueAt !== undefined) {
+      updateData.due_at = dto.dueAt ? new Date(dto.dueAt) : null;
+    }
+    if (dto.startAt !== undefined) {
+      updateData.start_at = dto.startAt ? new Date(dto.startAt) : null;
+    }
+
+    // Enum fields
+    if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.type !== undefined) updateData.type = dto.type;
+    if (dto.status !== undefined) updateData.status = dto.status;
+
+    // Relationship fields
+    if (dto.sprintId !== undefined) updateData.sprint_id = dto.sprintId;
+    if (dto.epicId !== undefined) updateData.epic_id = dto.epicId;
+    if (dto.parentTaskId !== undefined)
+      updateData.parent_task_id = dto.parentTaskId;
+
+    // Numeric fields
+    if (dto.storyPoints !== undefined)
+      updateData.story_points = dto.storyPoints;
+    if (dto.originalEstimateSec !== undefined)
+      updateData.original_estimate_sec = dto.originalEstimateSec;
+    if (dto.remainingEstimateSec !== undefined)
+      updateData.remaining_estimate_sec = dto.remainingEstimateSec;
+
     const updatedTask = await this.prisma.tasks.update({
       where: { id },
-      data: {
-        title: dto.title,
-        description: dto.description,
-        position: dto.position,
-      },
+      data: updateData,
     });
 
     // Log task update
     if (dto.updatedBy) {
-      const changes: Record<string, { old: string | null; new: string }> = {};
+      const changes: Record<string, { old: any; new: any }> = {};
+
+      // Track text changes
       if (dto.title !== undefined && dto.title !== currentTask.title) {
         changes.title = { old: currentTask.title, new: dto.title };
       }
@@ -248,6 +291,31 @@ export class TasksService {
           old: currentTask.description,
           new: dto.description,
         };
+      }
+
+      // Track date changes
+      if (dto.dueAt !== undefined) {
+        const newDueAt = dto.dueAt ? new Date(dto.dueAt) : null;
+        if (newDueAt?.getTime() !== currentTask.due_at?.getTime()) {
+          changes.dueAt = { old: currentTask.due_at, new: newDueAt };
+        }
+      }
+      if (dto.startAt !== undefined) {
+        const newStartAt = dto.startAt ? new Date(dto.startAt) : null;
+        if (newStartAt?.getTime() !== currentTask.start_at?.getTime()) {
+          changes.startAt = { old: currentTask.start_at, new: newStartAt };
+        }
+      }
+
+      // Track enum changes
+      if (dto.priority !== undefined && dto.priority !== currentTask.priority) {
+        changes.priority = { old: currentTask.priority, new: dto.priority };
+      }
+      if (dto.type !== undefined && dto.type !== currentTask.type) {
+        changes.type = { old: currentTask.type, new: dto.type };
+      }
+      if (dto.status !== undefined && dto.status !== currentTask.status) {
+        changes.status = { old: currentTask.status, new: dto.status };
       }
 
       if (Object.keys(changes).length > 0) {
