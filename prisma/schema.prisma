@@ -359,7 +359,7 @@ model tasks {
   original_estimate_sec                         Int?
   remaining_estimate_sec                        Int?
   // Calendar integration fields
-  calendar_event_id                             String?          @db.Uuid
+  calendar_event_id                             String? // Google Calendar Event ID (not UUID)
   calendar_reminder_enabled                     Boolean          @default(false)
   calendar_reminder_time                        Int? // minutes before due_at
   last_synced_at                                DateTime?        @db.Timestamptz(6)

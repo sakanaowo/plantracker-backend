@@ -400,29 +400,31 @@ export class GoogleCalendarService {
 
       console.log('  Creating event at:', reminderTime.toISOString());
 
-      const googleEvent: calendar_v3.Schema$Event = (await calendar.events.insert({
-        calendarId: 'primary',
-        requestBody: {
-          summary: `⏰ Nhắc nhở: ${title}`,
-          description: `Đây là nhắc nhở cho task: ${title}\n\nTask ID: ${taskId}`,
-          start: {
-            dateTime: reminderTime.toISOString(),
-            timeZone: 'Asia/Ho_Chi_Minh',
+      const googleEvent: calendar_v3.Schema$Event = (
+        await calendar.events.insert({
+          calendarId: 'primary',
+          requestBody: {
+            summary: `⏰ Nhắc nhở: ${title}`,
+            description: `Đây là nhắc nhở cho task: ${title}\n\nTask ID: ${taskId}`,
+            start: {
+              dateTime: reminderTime.toISOString(),
+              timeZone: 'Asia/Ho_Chi_Minh',
+            },
+            end: {
+              dateTime: reminderEndTime.toISOString(),
+              timeZone: 'Asia/Ho_Chi_Minh',
+            },
+            reminders: {
+              useDefault: false,
+              overrides: [
+                { method: 'popup', minutes: 10 },
+                { method: 'email', minutes: 30 },
+              ],
+            },
+            colorId: '11', // Red color for reminders
           },
-          end: {
-            dateTime: reminderEndTime.toISOString(),
-            timeZone: 'Asia/Ho_Chi_Minh',
-          },
-          reminders: {
-            useDefault: false,
-            overrides: [
-              { method: 'popup', minutes: 10 },
-              { method: 'email', minutes: 30 },
-            ],
-          },
-          colorId: '11', // Red color for reminders
-        },
-      })).data;
+        })
+      ).data;
 
       console.log('✅ [CALENDAR-SERVICE] Event created successfully!');
       console.log('  Event ID:', googleEvent.id);
