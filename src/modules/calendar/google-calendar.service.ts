@@ -374,17 +374,31 @@ export class GoogleCalendarService {
     dueDate: Date,
     reminderMinutes: number,
   ): Promise<string | null> {
+    console.log('\n🟡 [CALENDAR-SERVICE] createTaskReminderEvent called');
+    console.log('  User ID:', userId);
+    console.log('  Task ID:', taskId);
+    console.log('  Title:', title);
+    console.log('  Due Date:', dueDate);
+    console.log('  Reminder Minutes:', reminderMinutes);
+
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
+      console.log(
+        '❌ [CALENDAR-SERVICE] No calendar client - user not connected',
+      );
       this.logger.warn(`No calendar client for user ${userId}`);
       return null;
     }
+
+    console.log('✅ [CALENDAR-SERVICE] Calendar client obtained');
 
     try {
       const reminderTime = new Date(
         dueDate.getTime() - reminderMinutes * 60000,
       );
       const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
+
+      console.log('  Creating event at:', reminderTime.toISOString());
 
       const googleEvent = await calendar.events.insert({
         calendarId: 'primary',
@@ -410,9 +424,14 @@ export class GoogleCalendarService {
         },
       });
 
+      console.log('✅ [CALENDAR-SERVICE] Event created successfully!');
+      console.log('  Event ID:', googleEvent.data.id);
       this.logger.log(`Created task reminder event: ${googleEvent.data.id}`);
       return googleEvent.data.id || null;
     } catch (error) {
+      console.log('❌ [CALENDAR-SERVICE] Failed to create event');
+      console.log('  Error:', error.message);
+      console.log('  Full error:', error);
       this.logger.error(`Failed to create task reminder: ${error.message}`);
       return null;
     }
