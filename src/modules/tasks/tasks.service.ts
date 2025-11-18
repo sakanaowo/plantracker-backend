@@ -398,9 +398,49 @@ export class TasksService {
         : new Prisma.Decimal(1024);
     }
 
+    // Get target board to determine status
+    const toBoard = await this.prisma.boards.findUnique({
+      where: { id: toBoardId },
+      select: { name: true },
+    });
+
+    // Map board name to status
+    let newStatus: string | undefined;
+    if (toBoard) {
+      const boardName = toBoard.name.toLowerCase();
+      if (
+        boardName.includes('to do') ||
+        boardName.includes('todo') ||
+        boardName.includes('backlog')
+      ) {
+        newStatus = 'TO_DO';
+      } else if (
+        boardName.includes('in progress') ||
+        boardName.includes('doing')
+      ) {
+        newStatus = 'IN_PROGRESS';
+      } else if (
+        boardName.includes('review') ||
+        boardName.includes('testing')
+      ) {
+        newStatus = 'IN_REVIEW';
+      } else if (
+        boardName.includes('done') ||
+        boardName.includes('completed')
+      ) {
+        newStatus = 'DONE';
+      }
+    }
+
+    // Update task with new board_id, position, and status
+    const updateData: any = { board_id: toBoardId, position };
+    if (newStatus) {
+      updateData.status = newStatus;
+    }
+
     const updatedTask = await this.prisma.tasks.update({
       where: { id },
-      data: { board_id: toBoardId, position },
+      data: updateData,
     });
 
     // Log task move if board changed

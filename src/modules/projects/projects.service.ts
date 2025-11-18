@@ -491,13 +491,11 @@ export class ProjectsService {
     const now = new Date();
     const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const last14Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-    // Get all tasks for status overview
+    // Get ALL tasks for status overview (not limited by date)
     const allTasks = await this.prisma.tasks.findMany({
       where: {
         project_id: projectId,
-        created_at: { gte: last14Days },
       },
       select: {
         id: true,
@@ -562,7 +560,7 @@ export class ProjectsService {
       created: createdLast7Days,
       due: dueNext7Days,
       statusOverview: {
-        period: 'last 14 days',
+        period: 'all tasks',
         total: allTasks.length,
         toDo: statusCounts.TO_DO,
         inProgress: statusCounts.IN_PROGRESS,
