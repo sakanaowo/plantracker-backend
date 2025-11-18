@@ -75,6 +75,13 @@ export class AttachmentsService {
         uploaded_by: userId,
       },
     });
+    console.log(
+      `✅ Created attachment record: ${attachment.id} for task ${taskId}`,
+    );
+    console.log(`   Storage path: ${storagePath}`);
+    console.log(
+      `   File: ${dto.fileName}, Size: ${dto.size}, Type: ${dto.mimeType}`,
+    );
 
     // Log activity
     await this.activityLogsService.logAttachmentAdded({
@@ -106,6 +113,7 @@ export class AttachmentsService {
     // Validate task access
     await this.validateTaskAccess(taskId, userId);
 
+    console.log(`📎 Listing attachments for task: ${taskId}`);
     const attachments = await this.prisma.attachments.findMany({
       where: { task_id: taskId },
       include: {
@@ -117,6 +125,12 @@ export class AttachmentsService {
         },
       },
       orderBy: { created_at: 'desc' },
+    });
+    console.log(`📎 Found ${attachments.length} attachments`);
+    attachments.forEach((att, idx) => {
+      console.log(
+        `   ${idx + 1}. ID: ${att.id}, File: ${this.extractFileName(att.url)}, Size: ${att.size}`,
+      );
     });
 
     // Map to include file name from URL
