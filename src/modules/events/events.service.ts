@@ -246,7 +246,7 @@ export class EventsService {
         },
       },
       orderBy: {
-        start_at: filter === 'PAST' ? 'desc' : 'asc',
+        start_at: filter === 'UPCOMING' ? 'asc' : 'desc', // Default: newest first (desc)
       },
     });
   }
