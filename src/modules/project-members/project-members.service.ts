@@ -193,21 +193,10 @@ export class ProjectMembersService {
       },
     });
 
-    // Log invitation activity (so inviter can see action in activity feed)
-    await this.activityLogsService.logMemberAdded({
-      workspaceId: project.workspace_id,
-      projectId,
-      userId: invitedBy,
-      memberId: user.id,
-      memberName: user.name,
-      role: dto.role ?? 'MEMBER',
-      metadata: {
-        type: 'INVITATION_SENT',
-        email: user.email,
-        invitationId: invitation.id,
-      },
-    });
-    console.log('✅ Activity log created for invitation');
+    // ✅ FIX: Don't create activity log when sending invitation
+    // Activity log will be created only when invitation is ACCEPTED (see respondToInvitation method)
+    // This prevents confusing "X added Y" messages in activity feed before invitation is accepted
+    console.log('✅ Invitation created (no activity log until accepted)');
 
     // Send notification to invited user
     const inviter = await this.prisma.users.findUnique({
@@ -508,14 +497,15 @@ export class ProjectMembersService {
 
       // AUTO-ADD: Add user to workspace memberships if not already a member
       const workspaceId = invitation.projects.workspace_id;
-      const existingWorkspaceMembership = await this.prisma.memberships.findUnique({
-        where: {
-          user_id_workspace_id: {
-            user_id: userId,
-            workspace_id: workspaceId,
+      const existingWorkspaceMembership =
+        await this.prisma.memberships.findUnique({
+          where: {
+            user_id_workspace_id: {
+              user_id: userId,
+              workspace_id: workspaceId,
+            },
           },
-        },
-      });
+        });
 
       if (!existingWorkspaceMembership) {
         await this.prisma.memberships.create({
@@ -525,9 +515,13 @@ export class ProjectMembersService {
             role: 'MEMBER', // Default workspace member role
           },
         });
-        console.log(`✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`);
+        console.log(
+          `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
+        );
       } else {
-        console.log(`ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`);
+        console.log(
+          `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
+        );
       }
 
       // Log member added when accepted (separate from invitation sent)
@@ -545,6 +539,29 @@ export class ProjectMembersService {
         },
       });
       console.log('✅ Activity log created for acceptance');
+
+      // ✅ FIX: Send notification to inviter when invitation is accepted
+      try {
+        await this.notificationsService.sendNotificationToUser(
+          invitation.invited_by, // userId (inviter)
+          {
+            type: 'PROJECT_INVITE_ACCEPTED',
+            title: 'Lời mời được chấp nhận',
+            body: `${invitation.users.name} đã chấp nhận lời mời tham gia project "${invitation.projects.name}"`,
+            data: {
+              projectId: invitation.project_id,
+              invitationId: invitationId,
+              acceptedBy: userId,
+              acceptedByName: invitation.users.name,
+              role: invitation.role,
+            },
+            priority: 'HIGH',
+          },
+        );
+        console.log('✅ Notification sent to inviter about acceptance');
+      } catch (error) {
+        console.error('❌ Failed to send acceptance notification:', error);
+      }
     } else {
       // Log invitation declined
       await this.activityLogsService.logMemberRemoved({
@@ -554,6 +571,29 @@ export class ProjectMembersService {
         memberName: invitation.users.name,
         role: invitation.role,
       });
+
+      // ✅ FIX: Send notification to inviter when invitation is declined
+      try {
+        await this.notificationsService.sendNotificationToUser(
+          invitation.invited_by, // userId (inviter)
+          {
+            type: 'PROJECT_INVITE_DECLINED',
+            title: 'Lời mời bị từ chối',
+            body: `${invitation.users.name} đã từ chối lời mời tham gia project "${invitation.projects.name}"`,
+            data: {
+              projectId: invitation.project_id,
+              invitationId: invitationId,
+              declinedBy: userId,
+              declinedByName: invitation.users.name,
+              role: invitation.role,
+            },
+            priority: 'HIGH',
+          },
+        );
+        console.log('✅ Notification sent to inviter about decline');
+      } catch (error) {
+        console.error('❌ Failed to send decline notification:', error);
+      }
     }
 
     return {

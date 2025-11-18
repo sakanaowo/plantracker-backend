@@ -876,6 +876,8 @@ export class NotificationsService {
       TASK_ASSIGNED: 'TASK_ASSIGNED',
       TASK_MOVED: 'TASK_MOVED',
       PROJECT_INVITE: 'PROJECT_INVITE', // ✅ Fixed: Now maps correctly
+      PROJECT_INVITE_ACCEPTED: 'PROJECT_INVITE', // ✅ Use same type for accepted
+      PROJECT_INVITE_DECLINED: 'PROJECT_INVITE', // ✅ Use same type for declined
       TASK_COMMENT: 'TASK_COMMENT', // ✅ Fixed: Now maps correctly
       EVENT_INVITE: 'EVENT_INVITE',
       EVENT_UPDATED: 'EVENT_UPDATED',
