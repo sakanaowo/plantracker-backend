@@ -6,6 +6,7 @@ import {
   UseGuards,
   Res,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
@@ -165,29 +166,45 @@ export class CalendarController {
         count: events.length,
       };
     } catch (err: unknown) {
-      const error = err as Error;
-      // ✅ FIX: Handle errors gracefully and return empty array if user has no Google Calendar
-      if (error.message?.includes('Google Calendar not connected')) {
+      // Handle NestJS exceptions (they have response.message structure)
+      if (err instanceof BadRequestException) {
+        const errorResponse = err.getResponse();
+        const errorMessage =
+          typeof errorResponse === 'string'
+            ? errorResponse
+            : (errorResponse as { message?: string }).message;
+
         return {
           success: false,
           events: [],
           count: 0,
-          message:
-            'Google Calendar not connected. Please connect your Google Calendar first.',
+          message: errorMessage ?? 'Bad Request',
         };
       }
 
-      if (error.message?.includes('Project not found')) {
-        throw new BadRequestException(error.message);
+      if (err instanceof NotFoundException) {
+        const errorResponse = err.getResponse();
+        const errorMessage =
+          typeof errorResponse === 'string'
+            ? errorResponse
+            : (errorResponse as { message?: string }).message;
+
+        return {
+          success: false,
+          events: [],
+          count: 0,
+          message: errorMessage ?? 'Project not found',
+        };
       }
 
-      // Log error and return empty result instead of 500
+      // Handle regular errors
+      const error = err as Error;
       console.error('Calendar sync error:', error);
       return {
         success: false,
         events: [],
         count: 0,
-        message: error.message || 'Failed to sync events from Google Calendar',
+        message: error.message ?? 'Failed to sync events from Google Calendar',
       };
     }
   }
