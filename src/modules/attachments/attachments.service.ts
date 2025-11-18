@@ -58,14 +58,15 @@ export class AttachmentsService {
       );
     }
 
-    // Generate storage path for attachment
-    const storagePath = this.generateStoragePath(userId, taskId, dto.fileName);
-
     // Create signed upload URL via StorageService
-    const { signedUrl, token } =
-      await this.storageService.createSignedUploadUrl(userId, storagePath);
+    // ✅ FIX: Use the actual path returned by StorageService (not generateStoragePath)
+    const {
+      path: storagePath,
+      signedUrl,
+      token,
+    } = await this.storageService.createSignedUploadUrl(userId, dto.fileName);
 
-    // Pre-create attachment record
+    // Pre-create attachment record with the ACTUAL storage path
     const attachment = await this.prisma.attachments.create({
       data: {
         task_id: taskId,
@@ -236,28 +237,6 @@ export class AttachmentsService {
     });
 
     return { success: true, deletedId: attachmentId };
-  }
-
-  /**
-   * Helper: Generate storage path for attachment
-   * Format: {userId}/attachments/{taskId}/{timestamp}-{slug}.{ext}
-   */
-  private generateStoragePath(
-    userId: string,
-    taskId: string,
-    fileName: string,
-  ): string {
-    const timestamp = Date.now();
-    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
-    const baseName = fileName.replace(/\.[^/.]+$/, '');
-
-    // Slugify base name (simple version)
-    const slug = baseName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    return `${userId}/attachments/${taskId}/${timestamp}-${slug}.${ext}`;
   }
 
   /**
