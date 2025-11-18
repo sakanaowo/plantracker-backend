@@ -37,12 +37,16 @@ export class BoardsController {
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateBoardDto,
+    @CurrentUser('id') userId: string,
   ): Promise<boards> {
-    return this.svc.update(id, dto);
+    return this.svc.update(id, dto, userId);
   }
 
   @Delete(':id')
-  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<boards> {
-    return this.svc.remove(id);
+  remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<boards> {
+    return this.svc.remove(id, userId);
   }
 }

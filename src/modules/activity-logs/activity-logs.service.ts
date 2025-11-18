@@ -830,4 +830,92 @@ export class ActivityLogsService {
       },
     });
   }
+
+  /**
+   * Log when an event is updated
+   */
+  async logEventUpdated(params: {
+    projectId: string;
+    eventId: string;
+    userId: string;
+    eventTitle: string;
+    oldValue?: any;
+    newValue?: any;
+  }) {
+    return this.log({
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'UPDATED',
+      entityType: 'EVENT',
+      entityId: params.eventId,
+      entityName: params.eventTitle,
+      oldValue: params.oldValue,
+      newValue: params.newValue,
+    });
+  }
+
+  /**
+   * Log when an event is deleted from a project
+   */
+  async logEventDeleted(params: {
+    projectId: string;
+    eventId: string;
+    userId: string;
+    eventTitle: string;
+  }) {
+    return this.log({
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'DELETED',
+      entityType: 'EVENT',
+      entityId: params.eventId,
+      entityName: params.eventTitle,
+    });
+  }
+
+  /**
+   * Log when a board is updated
+   */
+  async logBoardUpdated(params: {
+    workspaceId: string;
+    projectId: string;
+    boardId: string;
+    userId: string;
+    boardName: string;
+    oldValue?: any;
+    newValue?: any;
+  }) {
+    return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'UPDATED',
+      entityType: 'BOARD',
+      entityId: params.boardId,
+      entityName: params.boardName,
+      oldValue: params.oldValue,
+      newValue: params.newValue,
+    });
+  }
+
+  /**
+   * Log when a board is deleted
+   */
+  async logBoardDeleted(params: {
+    workspaceId: string;
+    projectId: string;
+    boardId: string;
+    userId: string;
+    boardName: string;
+  }) {
+    return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'DELETED',
+      entityType: 'BOARD',
+      entityId: params.boardId,
+      entityName: params.boardName,
+    });
+  }
 }

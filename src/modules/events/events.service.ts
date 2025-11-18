@@ -94,6 +94,8 @@ export class EventsService {
   }
 
   async update(id: string, updateEventDto: any, userId: string) {
+    const oldEvent = await this.findOne(id);
+
     const updatedEvent = await this.prisma.events.update({
       where: { id },
       data: {
@@ -116,6 +118,26 @@ export class EventsService {
       },
     });
 
+    // Log event update
+    await this.activityLogsService.logEventUpdated({
+      projectId: updatedEvent.project_id,
+      eventId: updatedEvent.id,
+      userId,
+      eventTitle: updatedEvent.title,
+      oldValue: {
+        title: oldEvent.title,
+        startAt: oldEvent.start_at,
+        endAt: oldEvent.end_at,
+        location: oldEvent.location,
+      },
+      newValue: {
+        title: updatedEvent.title,
+        startAt: updatedEvent.start_at,
+        endAt: updatedEvent.end_at,
+        location: updatedEvent.location,
+      },
+    });
+
     this.logger.log(`Updated event: ${updatedEvent.title} by user ${userId}`);
     return updatedEvent;
   }
@@ -125,6 +147,14 @@ export class EventsService {
 
     await this.prisma.events.delete({
       where: { id },
+    });
+
+    // Log event deletion
+    await this.activityLogsService.logEventDeleted({
+      projectId: event.project_id,
+      eventId: event.id,
+      userId,
+      eventTitle: event.title,
     });
 
     this.logger.log(`Deleted event: ${event.title} by user ${userId}`);
