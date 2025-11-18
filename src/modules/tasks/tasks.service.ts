@@ -3,7 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Prisma, tasks, task_comments } from '@prisma/client';
+import { Prisma, tasks, task_comments, issue_status } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
@@ -405,7 +405,7 @@ export class TasksService {
     });
 
     // Map board name to status
-    let newStatus: string | undefined;
+    let newStatus: issue_status | undefined;
     if (toBoard) {
       const boardName = toBoard.name.toLowerCase();
       if (
@@ -413,22 +413,22 @@ export class TasksService {
         boardName.includes('todo') ||
         boardName.includes('backlog')
       ) {
-        newStatus = 'TO_DO';
+        newStatus = issue_status.TO_DO;
       } else if (
         boardName.includes('in progress') ||
         boardName.includes('doing')
       ) {
-        newStatus = 'IN_PROGRESS';
+        newStatus = issue_status.IN_PROGRESS;
       } else if (
         boardName.includes('review') ||
         boardName.includes('testing')
       ) {
-        newStatus = 'IN_REVIEW';
+        newStatus = issue_status.IN_REVIEW;
       } else if (
         boardName.includes('done') ||
         boardName.includes('completed')
       ) {
-        newStatus = 'DONE';
+        newStatus = issue_status.DONE;
       }
     }
 
@@ -1169,5 +1169,86 @@ export class TasksService {
       boardName: task.boards.name,
       assignees: task.task_assignees.map((a) => a.users),
     }));
+  }
+
+  /**
+   * Sync status field for all tasks in a project based on their board names
+   * Use this to fix existing tasks after deploying status sync feature
+   */
+  async syncTaskStatusByBoard(projectId: string): Promise<{
+    updated: number;
+    message: string;
+  }> {
+    console.log(
+      `\n🔄 [SYNC-STATUS] Starting status sync for project: ${projectId}`,
+    );
+
+    // Get all tasks with their boards
+    const tasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+      },
+      include: {
+        boards: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    console.log(`  📋 Found ${tasks.length} tasks to check`);
+
+    let updatedCount = 0;
+
+    for (const task of tasks) {
+      const boardName = task.boards.name.toLowerCase();
+
+      // Determine correct status from board name
+      let newStatus: issue_status | null = null;
+      if (
+        boardName.includes('to do') ||
+        boardName.includes('todo') ||
+        boardName.includes('backlog')
+      ) {
+        newStatus = issue_status.TO_DO;
+      } else if (
+        boardName.includes('in progress') ||
+        boardName.includes('doing')
+      ) {
+        newStatus = issue_status.IN_PROGRESS;
+      } else if (
+        boardName.includes('review') ||
+        boardName.includes('testing')
+      ) {
+        newStatus = issue_status.IN_REVIEW;
+      } else if (
+        boardName.includes('done') ||
+        boardName.includes('completed')
+      ) {
+        newStatus = issue_status.DONE;
+      }
+
+      // Update if status doesn't match
+      if (newStatus && task.status !== newStatus) {
+        console.log(
+          `  ✏️  Updating task "${task.title}" (board: ${task.boards.name})`,
+        );
+        console.log(`     ${task.status} → ${newStatus}`);
+
+        await this.prisma.tasks.update({
+          where: { id: task.id },
+          data: { status: newStatus },
+        });
+
+        updatedCount++;
+      }
+    }
+
+    console.log(`\n✅ [SYNC-STATUS] Complete! Updated ${updatedCount} tasks`);
+
+    return {
+      updated: updatedCount,
+      message: `Successfully synced status for ${updatedCount} out of ${tasks.length} tasks`,
+    };
   }
 }

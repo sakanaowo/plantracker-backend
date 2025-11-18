@@ -155,6 +155,15 @@ export class TasksController {
     return this.svc.unassignAll(taskId, userId);
   }
 
+  // ==================== STATUS SYNC ====================
+
+  @Post('sync-status/:projectId')
+  syncStatus(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+  ): Promise<{ updated: number; message: string }> {
+    return this.svc.syncTaskStatusByBoard(projectId);
+  }
+
   // ==================== CALENDAR SYNC ====================
   // TODO [TONIGHT]: Test task calendar sync with FE
   // 1. Enable reminder → Check event created in Google Calendar
