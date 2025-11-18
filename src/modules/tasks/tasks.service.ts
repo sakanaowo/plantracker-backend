@@ -96,11 +96,46 @@ export class TasksService {
     // ✅ No auto-assign - only use explicitly provided assignees
     const assigneeIds = dto.assigneeIds ?? [];
 
+    // ✅ Get board to determine correct status based on board name
+    const board = await this.prisma.boards.findUnique({
+      where: { id: dto.boardId },
+      select: { name: true },
+    });
+
+    // Map board name to status
+    let status: issue_status = issue_status.TO_DO; // Default
+    if (board) {
+      const boardName = board.name.toLowerCase();
+      if (
+        boardName.includes('to do') ||
+        boardName.includes('todo') ||
+        boardName.includes('backlog')
+      ) {
+        status = issue_status.TO_DO;
+      } else if (
+        boardName.includes('in progress') ||
+        boardName.includes('doing')
+      ) {
+        status = issue_status.IN_PROGRESS;
+      } else if (
+        boardName.includes('review') ||
+        boardName.includes('testing')
+      ) {
+        status = issue_status.IN_REVIEW;
+      } else if (
+        boardName.includes('done') ||
+        boardName.includes('completed')
+      ) {
+        status = issue_status.DONE;
+      }
+    }
+
     const task = await this.prisma.tasks.create({
       data: {
         project_id: dto.projectId,
         board_id: dto.boardId,
         title: dto.title,
+        status: status, // ✅ Set status based on board name
         created_by: dto.createdBy ?? null,
         position: nextPos,
       },
