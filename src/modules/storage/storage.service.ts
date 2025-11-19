@@ -57,4 +57,16 @@ export class StorageService {
       });
     return { ok: true };
   }
+
+  /**
+   * Get public URL for a file in storage
+   * @param objectPath - The relative path of the file in storage (e.g., "userId/uploads/file.jpg")
+   * @returns Full public URL (e.g., "https://...supabase.co/storage/v1/object/public/images/userId/uploads/file.jpg")
+   */
+  getPublicUrl(objectPath: string): string {
+    const { data } = this.supabase.storage
+      .from(this.bucket)
+      .getPublicUrl(objectPath);
+    return data.publicUrl;
+  }
 }

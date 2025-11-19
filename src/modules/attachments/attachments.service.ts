@@ -134,11 +134,11 @@ export class AttachmentsService {
       );
     });
 
-    // Map to include file name from URL
+    // Map to include file name from URL and convert to full public URL
     return attachments.map((attachment) => ({
       id: attachment.id,
       taskId: attachment.task_id,
-      url: attachment.url,
+      url: this.storageService.getPublicUrl(attachment.url), // ✅ Convert to full public URL
       fileName: this.extractFileName(attachment.url),
       mimeType: attachment.mime_type,
       size: attachment.size,
