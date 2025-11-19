@@ -699,6 +699,10 @@ export class ActivityLogsService {
   /**
    * Get activity feed for a specific user
    * @param userIdentifier - Can be either Firebase UID or database UUID
+   * Returns:
+   * 1. User's own activities
+   * 2. Team activities in projects where user is a member
+   * 3. Invitations sent to user
    */
   async getUserActivityFeed(userIdentifier: string, limit = 50) {
     // First, try to find the user by firebase_uid
@@ -715,11 +719,27 @@ export class ActivityLogsService {
       `📋 Getting activity feed for user: ${userId} (email: ${userEmail})`,
     );
 
+    // Get all projects where user is a member
+    const userProjects = await this.prisma.project_members.findMany({
+      where: { user_id: userId },
+      select: { project_id: true },
+    });
+
+    const projectIds = userProjects.map((pm) => pm.project_id);
+
+    console.log(
+      `✅ User is member of ${projectIds.length} projects: ${projectIds.slice(0, 3).join(', ')}${projectIds.length > 3 ? '...' : ''}`,
+    );
+
     return this.prisma.activity_logs.findMany({
       where: {
         OR: [
           // Logs where user is the actor (performed the action)
           { user_id: userId },
+          // Logs from projects where user is a member (team activities)
+          ...(projectIds.length > 0
+            ? [{ project_id: { in: projectIds } }]
+            : []),
           // Logs where user is affected (e.g., invitations sent to this user)
           ...(userEmail
             ? [
