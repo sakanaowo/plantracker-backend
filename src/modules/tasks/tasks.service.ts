@@ -674,6 +674,15 @@ export class TasksService {
   async getComments(taskId: string): Promise<task_comments[]> {
     return this.prisma.task_comments.findMany({
       where: { task_id: taskId },
+      include: {
+        users: {
+          select: {
+            id: true,
+            name: true,
+            avatar_url: true,
+          },
+        },
+      },
       orderBy: { created_at: 'asc' },
     });
   }
