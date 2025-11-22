@@ -63,6 +63,17 @@ export class TasksService {
             },
           },
         },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
       },
     });
   }
