@@ -46,7 +46,7 @@ export class TasksService {
     };
   }
 
-  listByBoard(boardId: string): Promise<tasks[]> {
+  listByBoard(boardId: string) {
     return this.prisma.tasks.findMany({
       where: { board_id: boardId, deleted_at: null },
       orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
