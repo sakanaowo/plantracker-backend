@@ -25,10 +25,17 @@ export class TasksController {
   constructor(private readonly svc: TasksService) {}
 
   @Get('by-board/:boardId')
-  list(
+  async list(
     @Param('boardId', new ParseUUIDPipe()) boardId: string,
   ): Promise<tasks[]> {
-    return this.svc.listByBoard(boardId);
+    const tasks = await this.svc.listByBoard(boardId);
+    console.log(`📋 Fetched ${tasks.length} tasks for board ${boardId}`);
+    tasks.forEach((task) => {
+      console.log(
+        `  - ${task.title}: labels=${(task as any).task_labels?.length || 0}, assignees=${(task as any).task_assignees?.length || 0}`,
+      );
+    });
+    return tasks;
   }
 
   @Get('quick/defaults')
