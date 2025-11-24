@@ -81,6 +81,31 @@ export class TasksService {
   getById(id: string): Promise<tasks | null> {
     return this.prisma.tasks.findFirst({
       where: { id },
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 
