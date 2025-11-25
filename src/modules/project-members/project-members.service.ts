@@ -193,10 +193,10 @@ export class ProjectMembersService {
       },
     });
 
-    // ✅ FIX: Don't create activity log when sending invitation
+    // ✅ Don't create activity log when sending invitation
+    // Invitations will be shown in separate Invitations tab via /api/invitations/my endpoint
     // Activity log will be created only when invitation is ACCEPTED (see respondToInvitation method)
-    // This prevents confusing "X added Y" messages in activity feed before invitation is accepted
-    console.log('✅ Invitation created (no activity log until accepted)');
+    console.log('✅ Invitation created (will appear in invitations tab)');
 
     // Send notification to invited user
     const inviter = await this.prisma.users.findUnique({
