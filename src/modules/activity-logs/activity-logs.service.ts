@@ -740,18 +740,16 @@ export class ActivityLogsService {
           ...(projectIds.length > 0
             ? [{ project_id: { in: projectIds } }]
             : []),
-          // Logs where user is affected (e.g., invitations sent to this user)
-          ...(userEmail
-            ? [
-                {
-                  entity_type: 'MEMBERSHIP' as const,
-                  metadata: {
-                    path: ['email'],
-                    equals: userEmail,
-                  },
-                },
-              ]
-            : []),
+          // ✅ FIX: Logs where user is affected (e.g., invitation accepted - user becomes member)
+          // When invitation is accepted, activity log is created with:
+          // - action: 'ADDED', entityType: 'MEMBERSHIP'
+          // - entityId: memberId (the person who joined)
+          // - userId: memberId (the person who joined)
+          // So we need to find logs where entityType=MEMBERSHIP and entityId=userId
+          {
+            entity_type: 'MEMBERSHIP' as const,
+            entity_id: userId, // Find logs where this user is the affected member
+          },
         ],
       },
       include: {
