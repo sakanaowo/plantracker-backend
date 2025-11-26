@@ -517,11 +517,26 @@ export class TasksService {
     // Log task move if board changed
     if (movedBy && currentTask && currentTask.board_id !== toBoardId) {
       const context = await this.getTaskContext(id);
+
+      // Get board names for activity log and notification
+      const [fromBoard, toBoard] = await Promise.all([
+        this.prisma.boards.findUnique({
+          where: { id: currentTask.board_id },
+          select: { name: true },
+        }),
+        this.prisma.boards.findUnique({
+          where: { id: toBoardId },
+          select: { name: true },
+        }),
+      ]);
+
       await this.activityLogsService.logTaskMoved({
         taskId: id,
         userId: movedBy,
         fromBoardId: currentTask.board_id,
         toBoardId: toBoardId,
+        fromBoardName: fromBoard?.name,
+        toBoardName: toBoard?.name,
         taskTitle: currentTask.title,
         workspaceId: context.workspaceId,
         projectId: context.projectId,
@@ -529,18 +544,6 @@ export class TasksService {
 
       // 🔔 Send TASK_MOVED notification
       try {
-        // Get board names for notification
-        const [fromBoard, toBoard] = await Promise.all([
-          this.prisma.boards.findUnique({
-            where: { id: currentTask.board_id },
-            select: { name: true },
-          }),
-          this.prisma.boards.findUnique({
-            where: { id: toBoardId },
-            select: { name: true },
-          }),
-        ]);
-
         // Get project members to notify (exclude mover)
         const projectMembers = await this.prisma.project_members.findMany({
           where: {

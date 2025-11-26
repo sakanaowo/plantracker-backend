@@ -267,6 +267,8 @@ export class ActivityLogsService {
     userId: string;
     fromBoardId: string;
     toBoardId: string;
+    fromBoardName?: string;
+    toBoardName?: string;
     taskTitle: string;
     workspaceId?: string;
     projectId?: string;
@@ -281,8 +283,14 @@ export class ActivityLogsService {
       entityType: 'TASK',
       entityId: params.taskId,
       entityName: params.taskTitle,
-      oldValue: { boardId: params.fromBoardId },
-      newValue: { boardId: params.toBoardId },
+      oldValue: {
+        boardId: params.fromBoardId,
+        boardName: params.fromBoardName,
+      },
+      newValue: {
+        boardId: params.toBoardId,
+        boardName: params.toBoardName,
+      },
     });
   }
 
