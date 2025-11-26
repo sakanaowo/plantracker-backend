@@ -10,7 +10,6 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
-import { ConvertToTeamDto } from './dto/convert-to-team.dto';
 import { project_role } from '@prisma/client';
 
 @Injectable()

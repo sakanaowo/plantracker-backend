@@ -13,7 +13,6 @@ import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
-import { ConvertToTeamDto } from './dto/convert-to-team.dto';
 
 @Controller('projects/:projectId')
 @UseGuards(CombinedAuthGuard)
