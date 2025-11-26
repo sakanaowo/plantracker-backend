@@ -351,6 +351,7 @@ export class ProjectsService {
             name: true,
             email: true,
             avatar_url: true,
+            firebase_uid: true,
           },
         },
       },
