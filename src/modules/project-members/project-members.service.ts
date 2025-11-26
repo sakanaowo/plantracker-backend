@@ -532,6 +532,7 @@ export class ProjectMembersService {
         memberId: userId,
         memberName: invitation.users.name,
         role: invitation.role,
+        projectName: invitation.projects.name,
         metadata: {
           type: 'INVITATION_ACCEPTED',
           invitedBy: invitation.invited_by,
@@ -606,11 +607,7 @@ export class ProjectMembersService {
   /**
    * Convert PERSONAL project to TEAM project
    */
-  async convertToTeam(
-    projectId: string,
-    userId: string,
-    dto: ConvertToTeamDto,
-  ) {
+  async convertToTeam(projectId: string, userId: string) {
     // Get project
     const project = await this.prisma.projects.findUnique({
       where: { id: projectId },
