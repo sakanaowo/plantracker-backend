@@ -584,7 +584,7 @@ export class ActivityLogsService {
       entityType: 'MEMBERSHIP',
       entityId: params.memberId,
       entityName: params.memberName,
-      newValue: params.projectName
+      newValue: params.projectName,
       metadata: { role: params.role, ...params.metadata },
     });
   }

@@ -65,9 +65,8 @@ export class ProjectMembersController {
   async convertToTeam(
     @Param('projectId') projectId: string,
     @CurrentUser('sub') userId: string,
-    @Body() dto: ConvertToTeamDto,
   ) {
-    return this.projectMembersService.convertToTeam(projectId, userId, dto);
+    return this.projectMembersService.convertToTeam(projectId, userId);
   }
 }
 
