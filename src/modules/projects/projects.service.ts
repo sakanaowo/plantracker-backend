@@ -324,6 +324,19 @@ export class ProjectsService {
         })),
       });
 
+      // ✅ Always create project_member record for creator with OWNER role
+      // This is needed for both PERSONAL and TEAM projects
+      if (createdBy) {
+        await tx.project_members.create({
+          data: {
+            project_id: newProject.id,
+            user_id: createdBy,
+            role: 'OWNER',
+            added_by: createdBy,
+          },
+        });
+      }
+
       return newProject;
     });
 

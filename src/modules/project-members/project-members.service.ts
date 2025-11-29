@@ -684,7 +684,7 @@ export class ProjectMembersService {
     userId: string,
     requiredRoles: project_role[],
   ) {
-    const member = await this.prisma.project_members.findUnique({
+    let member = await this.prisma.project_members.findUnique({
       where: {
         project_id_user_id: {
           project_id: projectId,
@@ -694,7 +694,33 @@ export class ProjectMembersService {
     });
 
     if (!member) {
-      throw new ForbiddenException('You are not a member of this project');
+      // 🔧 AUTO-FIX: Check if user is workspace owner (missing project_member record)
+      // This handles legacy projects created before we added automatic project_member creation
+      const project = await this.prisma.projects.findUnique({
+        where: { id: projectId },
+        include: {
+          workspaces: {
+            select: { owner_id: true },
+          },
+        },
+      });
+
+      if (project?.workspaces?.owner_id === userId) {
+        console.log(
+          '🔧 AUTO-FIX: Workspace owner missing project_member record, creating with OWNER role',
+        );
+        member = await this.prisma.project_members.create({
+          data: {
+            project_id: projectId,
+            user_id: userId,
+            role: 'OWNER',
+            added_by: userId,
+          },
+        });
+        console.log('✅ Project_member record auto-created for workspace owner');
+      } else {
+        throw new ForbiddenException('You are not a member of this project');
+      }
     }
 
     if (!requiredRoles.includes(member.role)) {

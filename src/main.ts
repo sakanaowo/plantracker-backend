@@ -8,15 +8,29 @@ import * as path from 'path';
 
 async function bootstrap() {
   // Debug: Check Prisma Client schema version
-  const prismaSchemaPath = path.join(process.cwd(), 'node_modules', '.prisma', 'client', 'schema.prisma');
+  const prismaSchemaPath = path.join(
+    process.cwd(),
+    'node_modules',
+    '.prisma',
+    'client',
+    'schema.prisma',
+  );
   if (fs.existsSync(prismaSchemaPath)) {
     const schemaContent = fs.readFileSync(prismaSchemaPath, 'utf-8');
-    const userIdLine = schemaContent.match(/model project_members[\s\S]*?user_id\s+(\S+)/);
-    console.log('🔍 PRISMA CLIENT CHECK - project_members.user_id type:', userIdLine?.[1] || 'NOT FOUND');
+    const userIdLine = schemaContent.match(
+      /model project_members[\s\S]*?user_id\s+(\S+)/,
+    );
+    console.log(
+      '🔍 PRISMA CLIENT CHECK - project_members.user_id type:',
+      userIdLine?.[1] || 'NOT FOUND',
+    );
   } else {
-    console.log('⚠️ Prisma Client schema.prisma not found at:', prismaSchemaPath);
+    console.log(
+      '⚠️ Prisma Client schema.prisma not found at:',
+      prismaSchemaPath,
+    );
   }
-  
+
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
