@@ -5,11 +5,13 @@
 Thay đổi `users.id` từ auto-generated UUID sang Firebase UID được gán thủ công.
 
 ### Trước:
+
 - `users.id`: UUID auto-generated bởi PostgreSQL
 - `users.firebase_uid`: String unique (Firebase UID)
 - FK columns: `@db.Uuid` type
 
 ### Sau:
+
 - `users.id`: String (Firebase UID) - gán thủ công
 - ❌ Xóa column `firebase_uid`
 - FK columns: String type (bỏ `@db.Uuid`)
@@ -19,11 +21,13 @@ Thay đổi `users.id` từ auto-generated UUID sang Firebase UID được gán 
 ## 🎯 Migration Strategy
 
 ### Option 1: Clean Slate (Recommended cho DB mới/ít data)
+
 - Drop toàn bộ data
 - Tạo lại schema mới
 - Users đăng ký lại
 
 ### Option 2: Data Preservation (Cho production có data)
+
 - Migrate existing users
 - Update tất cả FK references
 - Downtime: 30 phút - 2 giờ
@@ -35,6 +39,7 @@ Thay đổi `users.id` từ auto-generated UUID sang Firebase UID được gán 
 ### Phase 1: Preparation
 
 **1.1. Backup Database**
+
 ```bash
 # Sử dụng Neon Dashboard để tạo backup
 # Hoặc export data
@@ -42,15 +47,16 @@ pg_dump "$NEON_DATABASE_URL" > backup_before_migration.sql
 ```
 
 **1.2. Verify Data Integrity**
+
 ```sql
 -- Check NULL firebase_uid
 SELECT COUNT(*) FROM users WHERE firebase_uid IS NULL;
 -- Phải = 0
 
 -- Check duplicates
-SELECT firebase_uid, COUNT(*) 
-FROM users 
-GROUP BY firebase_uid 
+SELECT firebase_uid, COUNT(*)
+FROM users
+GROUP BY firebase_uid
 HAVING COUNT(*) > 1;
 -- Phải empty
 
@@ -68,6 +74,7 @@ SELECT 'project_members', COUNT(*) FROM project_members WHERE user_id NOT IN (SE
 ### Phase 2: Database Migration
 
 **2.1. Add Temporary Columns**
+
 ```sql
 -- Tạo temp columns để giữ Firebase UID
 ALTER TABLE users ADD COLUMN id_new TEXT;
@@ -96,6 +103,7 @@ ALTER TABLE workspaces ADD COLUMN owner_id_new TEXT;
 ```
 
 **2.2. Migrate Foreign Key Data**
+
 ```sql
 -- Map UUID -> Firebase UID for all FK columns
 UPDATE activity_logs SET user_id_new = (SELECT firebase_uid FROM users WHERE id = user_id);
@@ -120,6 +128,7 @@ UPDATE workspaces SET owner_id_new = (SELECT firebase_uid FROM users WHERE id = 
 ```
 
 **2.3. Verify Migration**
+
 ```sql
 -- Check NULLs (should be 0)
 SELECT COUNT(*) FROM activity_logs WHERE user_id_new IS NULL;
@@ -128,6 +137,7 @@ SELECT COUNT(*) FROM memberships WHERE user_id_new IS NULL;
 ```
 
 **2.4. Drop Old Constraints and Indexes**
+
 ```sql
 -- Drop all FK constraints
 ALTER TABLE activity_logs DROP CONSTRAINT IF EXISTS activity_logs_user_id_fkey;
@@ -168,6 +178,7 @@ ALTER TABLE integration_tokens DROP CONSTRAINT IF EXISTS user_id_provider;
 ```
 
 **2.5. Swap Columns**
+
 ```sql
 -- Users table
 ALTER TABLE users DROP CONSTRAINT users_pkey;
@@ -249,51 +260,52 @@ ALTER TABLE workspaces ALTER COLUMN owner_id SET NOT NULL;
 ```
 
 **2.6. Recreate Constraints and Indexes**
+
 ```sql
 -- Recreate FK constraints
-ALTER TABLE activity_logs ADD CONSTRAINT activity_logs_user_id_fkey 
+ALTER TABLE activity_logs ADD CONSTRAINT activity_logs_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE integration_tokens ADD CONSTRAINT integration_tokens_user_id_fkey 
+ALTER TABLE integration_tokens ADD CONSTRAINT integration_tokens_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE memberships ADD CONSTRAINT memberships_user_id_fkey 
+ALTER TABLE memberships ADD CONSTRAINT memberships_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE notifications ADD CONSTRAINT notifications_user_id_fkey 
+ALTER TABLE notifications ADD CONSTRAINT notifications_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE participants ADD CONSTRAINT participants_user_id_fkey 
+ALTER TABLE participants ADD CONSTRAINT participants_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id);
 
-ALTER TABLE project_members ADD CONSTRAINT project_members_user_id_fkey 
+ALTER TABLE project_members ADD CONSTRAINT project_members_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_user_id_fkey 
+ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_invited_by_fkey 
+ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_invited_by_fkey
   FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE task_assignees ADD CONSTRAINT task_assignees_user_id_fkey 
+ALTER TABLE task_assignees ADD CONSTRAINT task_assignees_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE task_comments ADD CONSTRAINT task_comments_user_id_fkey 
+ALTER TABLE task_comments ADD CONSTRAINT task_comments_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE tasks ADD CONSTRAINT tasks_created_by_fkey 
+ALTER TABLE tasks ADD CONSTRAINT tasks_created_by_fkey
   FOREIGN KEY (created_by) REFERENCES users(id);
 
-ALTER TABLE time_entries ADD CONSTRAINT time_entries_user_id_fkey 
+ALTER TABLE time_entries ADD CONSTRAINT time_entries_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE user_devices ADD CONSTRAINT user_devices_user_id_fkey 
+ALTER TABLE user_devices ADD CONSTRAINT user_devices_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE watchers ADD CONSTRAINT watchers_user_id_fkey 
+ALTER TABLE watchers ADD CONSTRAINT watchers_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE workspaces ADD CONSTRAINT workspaces_owner_id_fkey 
+ALTER TABLE workspaces ADD CONSTRAINT workspaces_owner_id_fkey
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- Recreate indexes
@@ -307,19 +319,19 @@ CREATE INDEX idx_time_entries_user_start ON time_entries(user_id, start_at);
 CREATE INDEX idx_user_devices_user_active ON user_devices(user_id, is_active);
 
 -- Recreate unique constraints
-ALTER TABLE memberships ADD CONSTRAINT memberships_user_id_workspace_id_key 
+ALTER TABLE memberships ADD CONSTRAINT memberships_user_id_workspace_id_key
   UNIQUE (user_id, workspace_id);
 
-ALTER TABLE project_members ADD CONSTRAINT project_members_project_id_user_id_key 
+ALTER TABLE project_members ADD CONSTRAINT project_members_project_id_user_id_key
   UNIQUE (project_id, user_id);
 
-ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_project_id_user_id_key 
+ALTER TABLE project_invitations ADD CONSTRAINT project_invitations_project_id_user_id_key
   UNIQUE (project_id, user_id);
 
 ALTER TABLE task_assignees ADD PRIMARY KEY (task_id, user_id);
 ALTER TABLE watchers ADD PRIMARY KEY (task_id, user_id);
 
-ALTER TABLE integration_tokens ADD CONSTRAINT user_id_provider 
+ALTER TABLE integration_tokens ADD CONSTRAINT user_id_provider
   UNIQUE (user_id, provider);
 ```
 
@@ -340,6 +352,7 @@ Xem file `CODE_CHANGES.md` trong cùng thư mục này.
 ## 🚀 Execution Plan
 
 ### Timeline (Production)
+
 1. **Announcement:** 1 tuần trước - Thông báo maintenance window
 2. **Staging Test:** 3 ngày trước - Test full migration trên staging
 3. **Backup:** 1 ngày trước - Full database backup
@@ -352,6 +365,7 @@ Xem file `CODE_CHANGES.md` trong cùng thư mục này.
    - 03:00 - Monitor
 
 ### Rollback Plan
+
 ```sql
 -- Restore from backup
 psql "$NEON_DATABASE_URL" < backup_before_migration.sql
@@ -362,8 +376,9 @@ psql "$NEON_DATABASE_URL" < backup_before_migration.sql
 ## ✅ Verification Checklist
 
 Sau migration, test:
+
 - [ ] User registration (email/password)
-- [ ] User login (email/password)  
+- [ ] User login (email/password)
 - [ ] Google Sign-In
 - [ ] Get user profile (`GET /users/me`)
 - [ ] Create project
@@ -381,15 +396,18 @@ Sau migration, test:
 ## 📊 Expected Impact
 
 **Database:**
+
 - Users table: -1 column (`firebase_uid`)
 - All FK columns: UUID → TEXT (slightly larger)
 - Total size change: ~+5-10% (TEXT > UUID)
 
 **Performance:**
+
 - Auth: **+50% faster** (no DB lookup trong guard)
 - Queries: ~same (indexes rebuilt)
 
 **Code:**
+
 - Backend: ~20 files modified
 - Frontend: ~15 files modified
 - Total LOC removed: ~200 lines

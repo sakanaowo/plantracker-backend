@@ -1,11 +1,13 @@
 # COMPREHENSIVE FIREBASE UID MIGRATION PLAN
 
 ## Executive Summary
+
 **Mục tiêu**: Thay thế System UUID bằng Firebase UID làm Primary Key cho bảng `users` và tất cả Foreign Keys liên quan
 
-**Tác động**: 
+**Tác động**:
+
 - Database: 16 tables, 30+ FK columns
-- Backend: 50+ controllers/services 
+- Backend: 50+ controllers/services
 - Frontend: Android app với 32+ DTOs
 - Downtime: 30-120 phút
 
@@ -16,6 +18,7 @@
 ### 1. Frontend → Backend Flow (Android)
 
 #### 1.1 Authentication & ID Injection
+
 ```java
 // FirebaseInterceptor.java - Gửi Firebase Token
 chain.proceed(requestBuilder
@@ -24,12 +27,14 @@ chain.proceed(requestBuilder
 ```
 
 **Flow**:
+
 1. Android app lấy Firebase ID Token từ `FirebaseAuth.getInstance().currentUser.getIdToken()`
 2. Gửi token qua header `Authorization: Bearer <token>`
 3. Backend guard verify token → extract `uid` → lookup DB bằng `firebase_uid` → trả về System ID
 4. Controller nhận System ID qua `@CurrentUser('id')` hoặc `@CurrentUser('sub')`
 
 #### 1.2 DTOs Nhận User Data
+
 ```java
 // ProjectMemberDTO.java
 public static class UserInfo {
@@ -51,6 +56,7 @@ public static class UserInfo {
 ```
 
 **Breaking Changes sau migration**:
+
 - `id` field sẽ chuyển từ UUID format → Firebase UID format
 - Android code KHÔNG kiểm tra format ID → SAFE
 - **NHƯNG** các code so sánh `userId == FirebaseAuth.uid` sẽ BỊ LỖI nếu vẫn dùng System UUID
@@ -58,6 +64,7 @@ public static class UserInfo {
 ### 2. Backend Internal Flow
 
 #### 2.1 Controllers → Services
+
 ```typescript
 // project-members.controller.ts
 @Post(':projectId/members')
@@ -71,56 +78,61 @@ async inviteMember(
 ```
 
 **Sau migration**: `userId` sẽ là Firebase UID thay vì System UUID
+
 - ✅ Không cần sửa code vì vẫn là string
 - ⚠️ NHƯNG cần update validation nếu có check UUID format
 
 #### 2.2 Services → Prisma Queries
+
 ```typescript
 // project-members.service.ts
 const member = await this.prisma.project_members.findUnique({
-    where: {
-        project_id_user_id: {
-            project_id: projectId,
-            user_id: userId,  // ← Hiện là System UUID, sau sẽ là Firebase UID
-        },
+  where: {
+    project_id_user_id: {
+      project_id: projectId,
+      user_id: userId, // ← Hiện là System UUID, sau sẽ là Firebase UID
     },
+  },
 });
 ```
 
 **Breaking Changes**:
+
 - Composite keys như `project_id_user_id` vẫn hoạt động
 - Query conditions vẫn KHÔNG đổi logic
 - ✅ Prisma schema update tự động handle type change
 
 #### 2.3 User Creation Flow
+
 ```typescript
 // users.service.ts - ensureFromFirebase()
 // TRƯỚC MIGRATION:
 user = await this.prisma.users.create({
-    data: {
-        firebase_uid: uid,        // uid từ Firebase token
-        email,
-        name,
-        password_hash: '',
-        // id: auto-generated UUID
-    },
+  data: {
+    firebase_uid: uid, // uid từ Firebase token
+    email,
+    name,
+    password_hash: '',
+    // id: auto-generated UUID
+  },
 });
 
 // SAU MIGRATION:
 user = await this.prisma.users.create({
-    data: {
-        id: uid,                  // ← GÁN TRỰC TIẾP Firebase UID
-        email,
-        name,
-        password_hash: '',
-        // firebase_uid column BỊ XÓA
-    },
+  data: {
+    id: uid, // ← GÁN TRỰC TIẾP Firebase UID
+    email,
+    name,
+    password_hash: '',
+    // firebase_uid column BỊ XÓA
+  },
 });
 ```
 
 ### 3. Backend → Frontend Response Flow
 
 #### 3.1 Response Serialization
+
 ```typescript
 // tasks.service.ts - Trả về task với assignees
 include: {
@@ -141,13 +153,14 @@ include: {
 ```
 
 **Frontend nhận**:
+
 ```json
 {
   "task_assignees": [
     {
       "users": {
-        "id": "abc123-uuid-format",  // TRƯỚC
-        "id": "firebase-uid-xyz789",  // SAU
+        "id": "abc123-uuid-format", // TRƯỚC
+        "id": "firebase-uid-xyz789", // SAU
         "name": "John Doe"
       }
     }
@@ -156,6 +169,7 @@ include: {
 ```
 
 #### 3.2 Android DTOs Mapping
+
 ```java
 // TaskDTO.java
 @SerializedName("id")
@@ -176,6 +190,7 @@ if (comment.getUserId().equals(currentUserUid)) {
 ### 1. Database Level
 
 #### 1.1 Schema Changes
+
 ```sql
 -- users.id: UUID → String (Firebase UID format)
 -- TRƯỚC: id UUID DEFAULT uuid_generate_v4()
@@ -187,6 +202,7 @@ if (comment.getUserId().equals(currentUserUid)) {
 ```
 
 #### 1.2 Foreign Key Changes (30+ columns)
+
 ```
 activity_logs.user_id
 attachments.uploaded_by
@@ -214,43 +230,46 @@ workspaces.owner_id
 ### 2. Backend Level
 
 #### 2.1 Authentication Guard Changes
+
 ```typescript
 // combined-auth.guard.ts
 // TRƯỚC:
 const dbUser = await this.prisma.users.findUnique({
-    where: { firebase_uid: decoded.uid },
+  where: { firebase_uid: decoded.uid },
 });
-req.user = dbUser.id;  // System UUID
+req.user = dbUser.id; // System UUID
 
 // SAU:
-req.user = decoded.uid;  // Firebase UID trực tiếp
+req.user = decoded.uid; // Firebase UID trực tiếp
 // KHÔNG CẦN database lookup!
 ```
 
 **Performance Improvement**: Mỗi request TIẾT KIỆM 1 DB query
 
 #### 2.2 User Service Changes
+
 ```typescript
 // users.service.ts
 // TRƯỚC: Cần check firebase_uid + email
 let user = await this.prisma.users.findUnique({
-    where: { firebase_uid: uid },
+  where: { firebase_uid: uid },
 });
 if (!user) {
-    user = await this.prisma.users.findUnique({
-        where: { email },
-    });
+  user = await this.prisma.users.findUnique({
+    where: { email },
+  });
 }
 
 // SAU: Chỉ cần check by id
 let user = await this.prisma.users.findUnique({
-    where: { id: uid },  // id = Firebase UID
+  where: { id: uid }, // id = Firebase UID
 });
 ```
 
 **Simplified Logic**: Bỏ dual-lookup pattern
 
 #### 2.3 Validation Changes
+
 ```typescript
 // TRƯỚC: Có thể validate UUID format
 @IsUUID()
@@ -266,6 +285,7 @@ userId: string;
 ### 3. Frontend Level
 
 #### 3.1 User Comparison Logic
+
 ```java
 // CardDetailActivity.java - TRƯỚC
 String firebaseUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
@@ -283,6 +303,7 @@ if (firebaseUid.equals(systemUserId)) {
 **Impact**: Các tính năng kiểm tra ownership SẼ BẮT ĐẦU HOẠT ĐỘNG
 
 #### 3.2 DTOs No Changes Needed
+
 ```java
 // ProjectMemberDTO.java
 private String userId;  // Vẫn là String, format thay đổi nhưng code KHÔNG care
@@ -303,6 +324,7 @@ private String userId;  // Vẫn là String
 ### Phase 1: Pre-Migration Preparation (2-3 giờ)
 
 #### 1.1 Database Backup
+
 ```bash
 # Full database dump
 pg_dump $NEON_DATABASE_URL > backup_before_migration_$(date +%Y%m%d_%H%M%S).sql
@@ -312,18 +334,19 @@ psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM users;"
 ```
 
 #### 1.2 Data Integrity Checks
+
 ```sql
 -- Check for users without firebase_uid
 SELECT COUNT(*) FROM users WHERE firebase_uid IS NULL OR firebase_uid = '';
 -- EXPECTED: 0
 
 -- Check for duplicate firebase_uid
-SELECT firebase_uid, COUNT(*) FROM users 
+SELECT firebase_uid, COUNT(*) FROM users
 GROUP BY firebase_uid HAVING COUNT(*) > 1;
 -- EXPECTED: 0 rows
 
 -- Check for NULL user_id in FK tables
-SELECT 'activity_logs' as table_name, COUNT(*) as null_count 
+SELECT 'activity_logs' as table_name, COUNT(*) as null_count
 FROM activity_logs WHERE user_id IS NULL
 UNION ALL
 SELECT 'task_assignees', COUNT(*) FROM task_assignees WHERE user_id IS NULL
@@ -334,18 +357,19 @@ SELECT 'project_members', COUNT(*) FROM project_members WHERE user_id IS NULL;
 -- EXPECTED: All 0
 
 -- Check for orphaned FK references
-SELECT COUNT(*) FROM activity_logs a 
+SELECT COUNT(*) FROM activity_logs a
 WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.user_id);
 -- EXPECTED: 0 (repeat for all FK tables)
 ```
 
 #### 1.3 Create Migration Rollback Point
+
 ```sql
 -- Create restore point (if supported by Neon)
 SELECT pg_create_restore_point('before_firebase_uid_migration');
 
 -- Document current user count and sample IDs
-SELECT 
+SELECT
     COUNT(*) as total_users,
     MIN(created_at) as oldest_user,
     MAX(created_at) as newest_user
@@ -355,6 +379,7 @@ FROM users;
 ### Phase 2: Database Migration (30-120 phút DOWNTIME)
 
 #### 2.1 Maintenance Mode Announcement
+
 ```typescript
 // src/app.controller.ts - Tạo endpoint trả về maintenance message
 @Get('health')
@@ -367,12 +392,14 @@ getHealth() {
 }
 ```
 
-**Action**: 
+**Action**:
+
 1. Deploy maintenance message
 2. Notify users qua push notification
 3. Disable new user registrations
 
 #### 2.2 Execute SQL Migration Script
+
 ```sql
 -- ========================================
 -- FIREBASE UID MIGRATION - MAIN SCRIPT
@@ -519,93 +546,93 @@ ALTER TABLE users DROP COLUMN firebase_uid;  -- REMOVE firebase_uid column
 ALTER TABLE users ADD PRIMARY KEY (id);
 
 -- STEP 9: Recreate FK constraints
-ALTER TABLE activity_logs 
-    ADD CONSTRAINT activity_logs_user_id_fkey 
+ALTER TABLE activity_logs
+    ADD CONSTRAINT activity_logs_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE events 
-    ADD CONSTRAINT events_created_by_fkey 
+ALTER TABLE events
+    ADD CONSTRAINT events_created_by_fkey
     FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE NO ACTION;
 
-ALTER TABLE integration_tokens 
-    ADD CONSTRAINT integration_tokens_user_id_fkey 
+ALTER TABLE integration_tokens
+    ADD CONSTRAINT integration_tokens_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE memberships 
-    ADD CONSTRAINT memberships_user_id_fkey 
+ALTER TABLE memberships
+    ADD CONSTRAINT memberships_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE notifications 
-    ADD CONSTRAINT notifications_user_id_fkey 
+ALTER TABLE notifications
+    ADD CONSTRAINT notifications_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE participants 
-    ADD CONSTRAINT participants_user_id_fkey 
+ALTER TABLE participants
+    ADD CONSTRAINT participants_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION;
 
-ALTER TABLE project_members 
-    ADD CONSTRAINT project_members_user_id_fkey 
+ALTER TABLE project_members
+    ADD CONSTRAINT project_members_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE task_assignees 
-    ADD CONSTRAINT task_assignees_user_id_fkey 
+ALTER TABLE task_assignees
+    ADD CONSTRAINT task_assignees_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE task_comments 
-    ADD CONSTRAINT task_comments_user_id_fkey 
+ALTER TABLE task_comments
+    ADD CONSTRAINT task_comments_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE tasks 
-    ADD CONSTRAINT tasks_created_by_fkey 
+ALTER TABLE tasks
+    ADD CONSTRAINT tasks_created_by_fkey
     FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE NO ACTION;
 
-ALTER TABLE time_entries 
-    ADD CONSTRAINT time_entries_user_id_fkey 
+ALTER TABLE time_entries
+    ADD CONSTRAINT time_entries_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE user_devices 
-    ADD CONSTRAINT user_devices_user_id_fkey 
+ALTER TABLE user_devices
+    ADD CONSTRAINT user_devices_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE watchers 
-    ADD CONSTRAINT watchers_user_id_fkey 
+ALTER TABLE watchers
+    ADD CONSTRAINT watchers_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE workspaces 
-    ADD CONSTRAINT workspaces_owner_id_fkey 
+ALTER TABLE workspaces
+    ADD CONSTRAINT workspaces_owner_id_fkey
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- STEP 10: Recreate composite unique constraints
-ALTER TABLE memberships 
-    ADD CONSTRAINT memberships_user_id_workspace_id_key 
+ALTER TABLE memberships
+    ADD CONSTRAINT memberships_user_id_workspace_id_key
     UNIQUE (user_id, workspace_id);
 
-ALTER TABLE project_members 
-    ADD CONSTRAINT project_members_project_id_user_id_key 
+ALTER TABLE project_members
+    ADD CONSTRAINT project_members_project_id_user_id_key
     UNIQUE (project_id, user_id);
 
-ALTER TABLE project_invitations 
-    ADD CONSTRAINT project_invitations_project_id_user_id_key 
+ALTER TABLE project_invitations
+    ADD CONSTRAINT project_invitations_project_id_user_id_key
     UNIQUE (project_id, user_id);
 
-ALTER TABLE integration_tokens 
-    ADD CONSTRAINT user_id_provider 
+ALTER TABLE integration_tokens
+    ADD CONSTRAINT user_id_provider
     UNIQUE (user_id, provider);
 
-ALTER TABLE participants 
-    ADD CONSTRAINT participants_event_id_email_key 
+ALTER TABLE participants
+    ADD CONSTRAINT participants_event_id_email_key
     UNIQUE (event_id, email);
 
-ALTER TABLE task_assignees 
-    ADD CONSTRAINT task_assignees_pkey 
+ALTER TABLE task_assignees
+    ADD CONSTRAINT task_assignees_pkey
     PRIMARY KEY (task_id, user_id);
 
-ALTER TABLE watchers 
-    ADD CONSTRAINT watchers_pkey 
+ALTER TABLE watchers
+    ADD CONSTRAINT watchers_pkey
     PRIMARY KEY (task_id, user_id);
 
 -- STEP 11: Final verification
-SELECT 
+SELECT
     (SELECT COUNT(*) FROM users) as user_count,
     (SELECT COUNT(*) FROM activity_logs WHERE user_id IS NULL) as null_activity_logs,
     (SELECT COUNT(*) FROM project_members WHERE user_id IS NULL) as null_project_members,
@@ -619,13 +646,14 @@ COMMIT;
 ```
 
 #### 2.3 Post-Migration Database Verification
+
 ```sql
 -- Verify users table
 SELECT id, email, name FROM users LIMIT 5;
 -- CHECK: id format should be Firebase UID (NOT UUID)
 
 -- Verify FK relationships
-SELECT COUNT(*) FROM activity_logs a 
+SELECT COUNT(*) FROM activity_logs a
 JOIN users u ON a.user_id = u.id;
 -- COMPARE with total activity_logs count
 
@@ -634,10 +662,10 @@ SELECT COUNT(*) FROM project_members pm
 JOIN users u ON pm.user_id = u.id;
 
 -- Check for orphaned records (should be 0)
-SELECT 'activity_logs' as table_name, COUNT(*) 
+SELECT 'activity_logs' as table_name, COUNT(*)
 FROM activity_logs WHERE user_id NOT IN (SELECT id FROM users)
 UNION ALL
-SELECT 'project_members', COUNT(*) 
+SELECT 'project_members', COUNT(*)
 FROM project_members WHERE user_id NOT IN (SELECT id FROM users);
 -- ASSERT: All 0
 ```
@@ -645,6 +673,7 @@ FROM project_members WHERE user_id NOT IN (SELECT id FROM users);
 ### Phase 3: Backend Code Update
 
 #### 3.1 Update Prisma Schema
+
 ```bash
 # Replace schema.prisma with schema.new.prisma
 cd /home/sakana/Code/MobileApp/plantracker-backend
@@ -660,27 +689,28 @@ grep -A 5 "model users" node_modules/.prisma/client/index.d.ts
 ```
 
 #### 3.2 Update Authentication Guard
+
 ```typescript
 // src/auth/combined-auth.guard.ts
 async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    
+
     const token = this.extractToken(req);
     if (!token) throw new UnauthorizedException('No token');
 
     try {
         const decoded = await admin.auth().verifyIdToken(token);
-        
+
         // ✅ NEW: Directly assign Firebase UID (no DB lookup)
         req.user = decoded.uid;
-        
+
         // ❌ OLD: Lookup user by firebase_uid
         // const dbUser = await this.prisma.users.findUnique({
         //     where: { firebase_uid: decoded.uid },
         // });
         // if (!dbUser) throw new UnauthorizedException('User not found');
         // req.user = dbUser.id;
-        
+
         return true;
     } catch (e) {
         throw new UnauthorizedException('Invalid token');
@@ -689,6 +719,7 @@ async canActivate(context: ExecutionContext): Promise<boolean> {
 ```
 
 #### 3.3 Update User Service
+
 ```typescript
 // src/modules/users/users.service.ts
 async ensureFromFirebase(opts: {
@@ -737,6 +768,7 @@ async ensureFromFirebase(opts: {
 ```
 
 #### 3.4 Remove UUID Validations
+
 ```bash
 # Search for UUID validations
 grep -r "@IsUUID()" src/modules/
@@ -753,12 +785,13 @@ grep -r "ParseUUIDPipe" src/modules/
 ### Phase 4: Frontend Code Update (OPTIONAL - App vẫn hoạt động)
 
 #### 4.1 Remove firebaseUid Fields from DTOs
+
 ```java
 // ProjectMemberDTO.java
 public static class UserInfo {
     @SerializedName("id")
     private String id;  // ✅ Giữ nguyên, giá trị sẽ là Firebase UID
-    
+
     // ❌ REMOVE: firebaseUid field (không còn trong response)
     // @SerializedName("firebaseUid")
     // private String firebaseUid;
@@ -766,6 +799,7 @@ public static class UserInfo {
 ```
 
 #### 4.2 Update User Comparison Logic
+
 ```java
 // CardDetailActivity.java
 String currentUserUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
@@ -782,9 +816,10 @@ if (task.getCreatedBy().equals(currentUserUid)) {
 ```
 
 #### 4.3 Testing Checklist
+
 - [ ] Login with Firebase → API trả về user với id = Firebase UID
 - [ ] Create task → task.createdBy = Firebase UID
-- [ ] Add comment → comment.userId = Firebase UID  
+- [ ] Add comment → comment.userId = Firebase UID
 - [ ] Assign task → assignee.userId = Firebase UID
 - [ ] Check ownership → `task.createdBy == FirebaseAuth.uid` WORKS
 - [ ] Project member list → member.userId = Firebase UID
@@ -794,6 +829,7 @@ if (task.getCreatedBy().equals(currentUserUid)) {
 ## IV. ROLLBACK PLAN
 
 ### Scenario 1: Migration fails DURING transaction
+
 ```sql
 -- Transaction auto-rollback
 ROLLBACK;
@@ -804,6 +840,7 @@ SELECT id, firebase_uid FROM users LIMIT 5;
 ```
 
 ### Scenario 2: Migration succeeded but backend bugs discovered
+
 ```sql
 -- Restore from backup
 psql $NEON_DATABASE_URL < backup_before_migration_YYYYMMDD_HHMMSS.sql
@@ -819,6 +856,7 @@ npm run build
 ```
 
 ### Scenario 3: Partial data corruption
+
 ```sql
 -- Identify affected records
 SELECT * FROM users WHERE id IS NULL OR id = '';
@@ -835,12 +873,14 @@ SELECT * FROM project_members WHERE user_id NOT IN (SELECT id FROM users);
 ### 1. Pre-Production Testing (Staging Environment)
 
 #### 1.1 Create Staging Database Clone
+
 ```bash
 # Clone production data to staging
 pg_dump $NEON_DATABASE_URL | psql $STAGING_DATABASE_URL
 ```
 
 #### 1.2 Run Migration on Staging
+
 ```bash
 # Execute migration script
 psql $STAGING_DATABASE_URL < migration.sql
@@ -850,6 +890,7 @@ psql $STAGING_DATABASE_URL -c "SELECT id, email FROM users LIMIT 10;"
 ```
 
 #### 1.3 Backend Integration Tests
+
 ```bash
 # Update .env to use staging DB
 DATABASE_URL=$STAGING_DATABASE_URL
@@ -866,6 +907,7 @@ curl -H "Authorization: Bearer <firebase-token>" \
 ```
 
 #### 1.4 Frontend Integration Tests
+
 ```bash
 # Update Android build config to point to staging
 # BuildConfig.API_BASE_URL = "https://staging.api.plantracker.com"
@@ -882,6 +924,7 @@ curl -H "Authorization: Bearer <firebase-token>" \
 ### 2. Production Smoke Tests (Post-Migration)
 
 #### 2.1 API Health Checks
+
 ```bash
 # Health endpoint
 curl https://api.plantracker.com/health
@@ -899,6 +942,7 @@ curl -H "Authorization: Bearer <test-user-token>" \
 ```
 
 #### 2.2 Critical Flow Tests
+
 ```bash
 # 1. User login & profile fetch
 # 2. Project member list
@@ -912,6 +956,7 @@ curl -H "Authorization: Bearer <token>" \
 ```
 
 #### 2.3 Database Monitoring
+
 ```sql
 -- Monitor query performance
 SELECT schemaname, tablename, idx_scan, idx_tup_read, idx_tup_fetch
@@ -929,28 +974,36 @@ ORDER BY created_at DESC LIMIT 100;
 ## VI. RISK MITIGATION
 
 ### 1. High Risk: Data Loss
+
 **Mitigation**:
+
 - Full database backup before migration
 - Transaction-based migration (all-or-nothing)
 - Verification queries after each step
 - Staging environment testing
 
 ### 2. Medium Risk: Extended Downtime
+
 **Mitigation**:
+
 - Pre-calculate migration time on staging clone
 - Run during low-traffic hours (2-4 AM)
 - Prepare rollback script (< 10 minutes)
 - Monitor progress with checkpoints
 
 ### 3. Medium Risk: App Crashes
+
 **Mitigation**:
+
 - Thorough staging tests
 - Backend deploy BEFORE migration (backwards compatible)
 - Frontend graceful degradation (ID format agnostic)
 - Incremental rollout (10% → 50% → 100%)
 
 ### 4. Low Risk: Performance Degradation
+
 **Mitigation**:
+
 - Index verification post-migration
 - Query performance monitoring
 - Firebase UID string comparison is FASTER than UUID
@@ -960,6 +1013,7 @@ ORDER BY created_at DESC LIMIT 100;
 ## VII. SUCCESS CRITERIA
 
 ### Database
+
 - ✅ All users.id converted to Firebase UID
 - ✅ firebase_uid column removed
 - ✅ All FK columns updated to TEXT type
@@ -968,6 +1022,7 @@ ORDER BY created_at DESC LIMIT 100;
 - ✅ Zero NULL user_id in FK tables
 
 ### Backend
+
 - ✅ No database lookup in auth guard
 - ✅ User creation uses id = Firebase UID
 - ✅ All endpoints return Firebase UID in responses
@@ -975,6 +1030,7 @@ ORDER BY created_at DESC LIMIT 100;
 - ✅ All integration tests passing
 
 ### Frontend
+
 - ✅ Login successful
 - ✅ User data fetched correctly
 - ✅ Task creation/assignment works
@@ -983,6 +1039,7 @@ ORDER BY created_at DESC LIMIT 100;
 - ✅ No crashes related to ID format
 
 ### Performance
+
 - ✅ Auth requests 20-30% faster (no DB lookup)
 - ✅ Response times unchanged or improved
 - ✅ Database query performance stable
@@ -992,24 +1049,28 @@ ORDER BY created_at DESC LIMIT 100;
 ## VIII. TIMELINE
 
 ### Day 1: Preparation (4 hours)
+
 - Hour 1: Database backup & verification
 - Hour 2: Staging environment setup
 - Hour 3: Run migration on staging
 - Hour 4: Staging backend/frontend testing
 
 ### Day 2: Code Updates (4 hours)
+
 - Hour 1: Update Prisma schema
 - Hour 2: Update auth guard & services
 - Hour 3: Remove UUID validations
 - Hour 4: Integration testing
 
 ### Day 3: Production Migration (2-3 hours DOWNTIME)
+
 - Hour 1: Enable maintenance mode
 - Hour 2: Execute SQL migration
 - Hour 3: Deploy backend code
 - Hour 4: Smoke testing & monitoring
 
 ### Day 4: Frontend Update (Optional, 2 hours)
+
 - Hour 1: Remove firebaseUid fields
 - Hour 2: Update comparison logic
 - Hour 3: Release update to Play Store
@@ -1021,9 +1082,10 @@ ORDER BY created_at DESC LIMIT 100;
 ### Post-Migration Monitoring (First 48 hours)
 
 #### 1. Database Metrics
+
 ```sql
 -- Query every 15 minutes
-SELECT 
+SELECT
     schemaname,
     tablename,
     n_live_tup as row_count,
@@ -1034,6 +1096,7 @@ WHERE tablename IN ('users', 'project_members', 'activity_logs');
 ```
 
 #### 2. Application Logs
+
 ```bash
 # Monitor for errors
 tail -f /var/log/plantracker/app.log | grep -i "error\|exception\|fail"
@@ -1043,6 +1106,7 @@ grep "UnauthorizedException" /var/log/plantracker/app.log | wc -l
 ```
 
 #### 3. Performance Metrics
+
 ```typescript
 // Add timing logs to auth guard
 const startTime = Date.now();
@@ -1052,6 +1116,7 @@ console.log(`Auth time: ${Date.now() - startTime}ms`);
 ```
 
 #### 4. User Feedback
+
 - Monitor app crash reports (Firebase Crashlytics)
 - Check support tickets
 - Review app store ratings
@@ -1062,7 +1127,9 @@ console.log(`Auth time: ${Date.now() - startTime}ms`);
 ## X. COMMUNICATION PLAN
 
 ### Before Migration
+
 **24 hours notice**:
+
 ```
 Subject: System Maintenance - November 29, 2025
 
@@ -1084,7 +1151,9 @@ Thank you for your patience!
 ```
 
 ### During Migration
+
 **Push notification**:
+
 ```json
 {
   "title": "Đang bảo trì",
@@ -1097,7 +1166,9 @@ Thank you for your patience!
 ```
 
 ### After Migration
+
 **Success announcement**:
+
 ```
 Subject: System Upgrade Complete
 
@@ -1120,8 +1191,9 @@ Thank you!
 ### A. SQL Helper Queries
 
 #### Count Records by Table
+
 ```sql
-SELECT 
+SELECT
     'users' as table_name, COUNT(*) as count FROM users
 UNION ALL SELECT 'activity_logs', COUNT(*) FROM activity_logs
 UNION ALL SELECT 'project_members', COUNT(*) FROM project_members
@@ -1132,6 +1204,7 @@ UNION ALL SELECT 'workspaces', COUNT(*) FROM workspaces;
 ```
 
 #### Find Sample User IDs
+
 ```sql
 -- Before migration (UUID format)
 SELECT id, firebase_uid, email FROM users LIMIT 5;
@@ -1168,19 +1241,23 @@ SELECT id, email FROM users LIMIT 5;
 Migration này là **HIGH IMPACT, MEDIUM RISK** với benefits rõ ràng:
 
 ### Benefits
+
 1. **Performance**: Auth requests nhanh hơn 20-30% (no DB lookup)
 2. **Simplicity**: Bỏ dual-ID system, chỉ dùng Firebase UID
 3. **Correctness**: Ownership checks trên Android SẼ HOẠT ĐỘNG
 4. **Consistency**: ID trên FE, BE, DB đều cùng Firebase UID
 
 ### Risks
+
 1. Extended downtime (30-120 phút)
 2. Data integrity issues nếu migration script lỗi
 3. Breaking changes cho code kiểm tra UUID format
 4. Rollback phức tạp (cần restore full backup)
 
 ### Recommendation
+
 ✅ **THỰC HIỆN** migration với điều kiện:
+
 - Test kỹ trên staging environment
 - Schedule trong off-peak hours (2-4 AM)
 - Có backup plan rõ ràng
