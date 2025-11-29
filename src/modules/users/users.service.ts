@@ -34,17 +34,15 @@ export class UsersService {
     console.log('[ensureFromFirebase] Starting for:', { uid, email });
 
     try {
-      // First, try to find by firebase_uid
+      // Try to find by id (which is Firebase UID now)
       let user = await this.prisma.users.findUnique({
-        where: { firebase_uid: uid },
+        where: { id: uid },
       });
 
-      console.log('[ensureFromFirebase] Found by firebase_uid:', !!user);
-
-      console.log('[ensureFromFirebase] Found by firebase_uid:', !!user);
+      console.log('[ensureFromFirebase] Found by id:', !!user);
 
       if (user) {
-        // User exists with this firebase_uid, just update
+        // User exists, just update
         console.log('[ensureFromFirebase] Updating existing user');
         user = await this.prisma.users.update({
           where: { id: user.id },
@@ -56,45 +54,17 @@ export class UsersService {
           },
         });
       } else {
-        // Check if a user with this email already exists (from migration)
-        console.log('[ensureFromFirebase] Checking by email:', email);
-        const existingUserByEmail = await this.prisma.users.findUnique({
-          where: { email },
+        // New user, create with Firebase UID as id
+        console.log('[ensureFromFirebase] Creating new user');
+        user = await this.prisma.users.create({
+          data: {
+            id: uid, // ✅ Use Firebase UID as primary key
+            email,
+            name: name ?? email.split('@')[0],
+            avatar_url: avatarUrl ?? null,
+            password_hash: '',
+          },
         });
-
-        console.log(
-          '[ensureFromFirebase] Found by email:',
-          !!existingUserByEmail,
-        );
-
-        if (existingUserByEmail) {
-          // User exists with this email but different firebase_uid
-          // This happens after migration - update firebase_uid
-          console.log(
-            '[ensureFromFirebase] Updating firebase_uid for existing user',
-          );
-          user = await this.prisma.users.update({
-            where: { id: existingUserByEmail.id },
-            data: {
-              firebase_uid: uid,
-              name: name ?? undefined,
-              avatar_url: avatarUrl ?? undefined,
-              updated_at: new Date(),
-            },
-          });
-        } else {
-          // New user, create
-          console.log('[ensureFromFirebase] Creating new user');
-          user = await this.prisma.users.create({
-            data: {
-              firebase_uid: uid,
-              email,
-              name: name ?? email.split('@')[0],
-              avatar_url: avatarUrl ?? null,
-              password_hash: '',
-            },
-          });
-        }
       }
 
       // Ensure personal workspace exists for any Firebase user sync
@@ -111,28 +81,12 @@ export class UsersService {
           );
           // Unique constraint violation - try to find the user again
           const user = await this.prisma.users.findUnique({
-            where: { firebase_uid: uid },
+            where: { id: uid },
           });
           if (user) {
-            console.log('[ensureFromFirebase] Found user after retry by uid');
+            console.log('[ensureFromFirebase] Found user after retry');
             await this.workspaces.ensurePersonalWorkspaceByUserId(user.id);
             return user;
-          }
-          // If still not found by firebase_uid, try by email
-          const userByEmail = await this.prisma.users.findUnique({
-            where: { email },
-          });
-          if (userByEmail) {
-            console.log('[ensureFromFirebase] Found user after retry by email');
-            // Update firebase_uid for this user
-            const updatedUser = await this.prisma.users.update({
-              where: { id: userByEmail.id },
-              data: { firebase_uid: uid },
-            });
-            await this.workspaces.ensurePersonalWorkspaceByUserId(
-              updatedUser.id,
-            );
-            return updatedUser;
           }
         }
       }
@@ -304,7 +258,7 @@ export class UsersService {
 
   async updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
     console.log('🔄 updateMeById called with:', { id, data });
-    
+
     // Update user profile
     const updatedUser = await this.prisma.users.update({
       where: { id },
@@ -314,16 +268,16 @@ export class UsersService {
         updated_at: new Date(),
       },
     });
-    
+
     console.log('✅ User updated:', updatedUser.name);
 
     // If name is updated, also update the personal workspace name
     if (data.name) {
       console.log('🔍 Searching for personal workspace for user:', id);
-      
+
       try {
         const personalWorkspace = await this.prisma.workspaces.findFirst({
-          where: { 
+          where: {
             owner_id: id,
           },
         });
@@ -332,7 +286,7 @@ export class UsersService {
 
         if (personalWorkspace) {
           const newWorkspaceName = `${data.name.trim()}'s Workspace`;
-          
+
           await this.prisma.workspaces.update({
             where: { id: personalWorkspace.id },
             data: {
@@ -340,8 +294,10 @@ export class UsersService {
               updated_at: new Date(),
             },
           });
-          
-          console.log(`✅ Updated personal workspace name to: ${newWorkspaceName}`);
+
+          console.log(
+            `✅ Updated personal workspace name to: ${newWorkspaceName}`,
+          );
         } else {
           console.log('⚠️ No personal workspace found for user:', id);
         }
@@ -368,14 +324,16 @@ export class UsersService {
     console.log(`🔔 [FCM] Registering device for user: ${userId}`);
     console.log(`   FCM Token: ${dto.fcmToken.substring(0, 20)}...`);
     console.log(`   Platform: ${dto.platform}, Model: ${dto.deviceModel}`);
-    
+
     // Check if device already exists by fcm_token
     const existingDevice = await this.prisma.user_devices.findUnique({
       where: { fcm_token: dto.fcmToken },
     });
 
     if (existingDevice) {
-      console.log(`✅ [FCM] Token already registered, updating device ${existingDevice.id}`);
+      console.log(
+        `✅ [FCM] Token already registered, updating device ${existingDevice.id}`,
+      );
       // Update existing device
       const updated = await this.prisma.user_devices.update({
         where: { id: existingDevice.id },

@@ -347,11 +347,10 @@ export class ProjectsService {
       include: {
         users: {
           select: {
-            id: true,
+            id: true, // ✅ id IS Firebase UID now
             name: true,
             email: true,
             avatar_url: true,
-            firebase_uid: true,
           },
         },
       },

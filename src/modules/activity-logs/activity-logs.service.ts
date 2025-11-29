@@ -715,13 +715,13 @@ export class ActivityLogsService {
    * 3. Invitations sent to user
    */
   async getUserActivityFeed(userIdentifier: string, limit = 50) {
-    // First, try to find the user by firebase_uid
+    // Try to find the user by id (which is Firebase UID now)
     const user = await this.prisma.users.findUnique({
-      where: { firebase_uid: userIdentifier },
+      where: { id: userIdentifier }, // ✅ Changed from firebase_uid to id
       select: { id: true, email: true },
     });
 
-    // If not found by firebase_uid, assume it's a database UUID
+    // userIdentifier IS the userId (Firebase UID)
     const userId = user ? user.id : userIdentifier;
     const userEmail = user?.email;
 
