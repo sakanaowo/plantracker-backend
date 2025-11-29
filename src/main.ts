@@ -7,28 +7,51 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 async function bootstrap() {
-  // Debug: Check Prisma Client schema version
-  const prismaSchemaPath = path.join(
+  // Debug: DEEP check Prisma Client generated files
+  const prismaClientDir = path.join(
     process.cwd(),
     'node_modules',
     '.prisma',
     'client',
-    'schema.prisma',
   );
+
+  console.log('🔍 PRISMA CLIENT DEEP CHECK:');
+  console.log('  Client dir exists:', fs.existsSync(prismaClientDir));
+
+  // Check schema.prisma
+  const prismaSchemaPath = path.join(prismaClientDir, 'schema.prisma');
   if (fs.existsSync(prismaSchemaPath)) {
     const schemaContent = fs.readFileSync(prismaSchemaPath, 'utf-8');
-    const userIdLine = schemaContent.match(
+    const userIdMatch = schemaContent.match(
       /model project_members[\s\S]*?user_id\s+(\S+)/,
     );
     console.log(
-      '🔍 PRISMA CLIENT CHECK - project_members.user_id type:',
-      userIdLine?.[1] || 'NOT FOUND',
+      '  schema.prisma user_id type:',
+      userIdMatch?.[1] || 'NOT FOUND',
     );
-  } else {
+  }
+
+  // Check index.d.ts (TypeScript types)
+  const indexDtsPath = path.join(prismaClientDir, 'index.d.ts');
+  if (fs.existsSync(indexDtsPath)) {
+    const dtsContent = fs.readFileSync(indexDtsPath, 'utf-8');
+    const userIdTypeMatch = dtsContent.match(
+      /project_members[\s\S]{0,500}user_id:\s*(\S+)/,
+    );
     console.log(
-      '⚠️ Prisma Client schema.prisma not found at:',
-      prismaSchemaPath,
+      '  index.d.ts user_id type:',
+      userIdTypeMatch?.[1] || 'NOT FOUND',
     );
+  }
+
+  // Check all files modified time
+  if (fs.existsSync(prismaClientDir)) {
+    const files = fs.readdirSync(prismaClientDir);
+    const stats = files.slice(0, 5).map((f) => {
+      const stat = fs.statSync(path.join(prismaClientDir, f));
+      return `${f}: ${stat.mtime.toISOString()}`;
+    });
+    console.log('  Recent files:\n   ', stats.join('\n    '));
   }
 
   const app = await NestFactory.create(AppModule);

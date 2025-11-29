@@ -717,7 +717,9 @@ export class ProjectMembersService {
             added_by: userId,
           },
         });
-        console.log('✅ Project_member record auto-created for workspace owner');
+        console.log(
+          '✅ Project_member record auto-created for workspace owner',
+        );
       } else {
         throw new ForbiddenException('You are not a member of this project');
       }
