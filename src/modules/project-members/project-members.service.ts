@@ -81,15 +81,29 @@ export class ProjectMembersService {
       console.log('✅ Project converted to TEAM');
 
       // Add workspace owner as project OWNER member
-      await this.prisma.project_members.create({
-        data: {
-          project_id: projectId,
-          user_id: invitedBy, // The workspace owner becomes project owner
-          role: 'OWNER',
-          added_by: invitedBy,
-        },
+      console.log('🔧 DEBUG: Creating project_member with data:', {
+        project_id: projectId,
+        user_id: invitedBy,
+        user_id_type: typeof invitedBy,
+        user_id_length: invitedBy?.length,
+        role: 'OWNER',
+        added_by: invitedBy,
       });
-      console.log('✅ Workspace owner added as project OWNER');
+      
+      try {
+        await this.prisma.project_members.create({
+          data: {
+            project_id: projectId,
+            user_id: invitedBy, // The workspace owner becomes project owner
+            role: 'OWNER',
+            added_by: invitedBy,
+          },
+        });
+        console.log('✅ Workspace owner added as project OWNER');
+      } catch (error) {
+        console.error('❌ Failed to create project_member:', error);
+        throw error;
+      }
 
       // Log conversion activity
       await this.activityLogsService.logProjectUpdated({
