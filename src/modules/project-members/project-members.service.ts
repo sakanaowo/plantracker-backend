@@ -89,7 +89,7 @@ export class ProjectMembersService {
         role: 'OWNER',
         added_by: invitedBy,
       });
-      
+
       try {
         await this.prisma.project_members.create({
           data: {
