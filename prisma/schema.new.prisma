@@ -1,0 +1,640 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("NEON_DATABASE_URL")
+}
+
+model activity_logs {
+  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id      String?          @db.Uuid
+  project_id        String?          @db.Uuid
+  board_id          String?          @db.Uuid
+  task_id           String?          @db.Uuid
+  checklist_item_id String?          @db.Uuid
+  user_id           String           // ← CHANGED: removed @db.Uuid
+  action            activity_action
+  entity_type       entity_type
+  entity_id         String?          @db.Uuid
+  entity_name       String?
+  old_value         Json?
+  new_value         Json?
+  metadata          Json?
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  boards            boards?          @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  projects          projects?        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks             tasks?           @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workspaces        workspaces?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  checklist_items   checklist_items? @relation(fields: [checklist_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([board_id, created_at], map: "idx_activity_board")
+  @@index([project_id, created_at], map: "idx_activity_project")
+  @@index([task_id, created_at], map: "idx_activity_task")
+  @@index([user_id, created_at], map: "idx_activity_user")
+  @@index([workspace_id, created_at], map: "idx_activity_workspace")
+}
+
+model attachments {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  task_id     String   @db.Uuid
+  url         String
+  mime_type   String?
+  size        Int?
+  uploaded_by String?  // ← CHANGED: removed @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([task_id, created_at], map: "idx_attachments_task")
+}
+
+model boards {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id    String          @db.Uuid
+  name          String
+  order         Int
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  activity_logs activity_logs[]
+  projects      projects        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks         tasks[]
+
+  @@index([project_id, order], map: "idx_boards_project_order")
+}
+
+model checklist_items {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_id  String          @db.Uuid
+  content       String
+  is_done       Boolean         @default(false)
+  position      Decimal         @default(0) @db.Decimal(10, 3)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  checklists    checklists      @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity_logs activity_logs[]
+
+  @@index([checklist_id, position], map: "idx_checklist_items_order")
+}
+
+model checklists {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  task_id         String            @db.Uuid
+  title           String
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  checklist_items checklist_items[]
+  tasks           tasks             @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model email_queue {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  to_email     String
+  subject      String
+  body         String
+  status       email_status
+  retry_count  Int          @default(0)
+  last_error   String?
+  scheduled_at DateTime?    @db.Timestamptz(6)
+  created_at   DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@index([status, scheduled_at], map: "idx_email_queue_sched")
+}
+
+model events {
+  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id         String               @db.Uuid
+  title              String
+  description        String?
+  start_at           DateTime             @db.Timestamptz(6)
+  end_at             DateTime             @db.Timestamptz(6)
+  location           String?
+  meet_link          String?
+  event_type         event_type           @default(OTHER)
+  recurrence         recurrence_type      @default(NONE)
+  created_by         String?              // ← CHANGED: removed @db.Uuid
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  users              users?               @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  projects           projects             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  external_event_map external_event_map[]
+  participants       participants[]
+
+  @@index([project_id, start_at], map: "idx_events_project_start")
+}
+
+model external_event_map {
+  id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  event_id          String    @db.Uuid
+  provider          provider
+  provider_event_id String
+  html_link         String?
+  etag              String?
+  last_synced_at    DateTime? @db.Timestamptz(6)
+  events            events    @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, provider_event_id])
+  @@index([event_id], map: "idx_external_event_event")
+}
+
+model integration_tokens {
+  id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String       // ← CHANGED: removed @db.Uuid
+  provider         provider
+  account_email    String?
+  external_user_id String?
+  access_token     String
+  refresh_token    String?
+  scope            String?
+  token_type       String?
+  expires_at       DateTime?    @db.Timestamptz(6)
+  status           token_status
+  metadata         Json?
+  created_at       DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime     @default(now()) @db.Timestamptz(6)
+  users            users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, provider], map: "user_id_provider")
+  @@index([user_id, provider], map: "idx_integration_user_provider")
+}
+
+model issue_links {
+  source_task_id                          String          @db.Uuid
+  target_task_id                          String          @db.Uuid
+  link_type                               issue_link_type
+  created_at                              DateTime        @default(now()) @db.Timestamptz(6)
+  tasks_issue_links_source_task_idTotasks tasks           @relation("issue_links_source_task_idTotasks", fields: [source_task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks_issue_links_target_task_idTotasks tasks           @relation("issue_links_target_task_idTotasks", fields: [target_task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([source_task_id, target_task_id, link_type])
+}
+
+model labels {
+  id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  color       String
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime      @default(now()) @db.Timestamptz(6)
+  project_id  String        @db.Uuid
+  projects    projects      @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  task_labels task_labels[]
+
+  @@index([project_id, created_at], map: "idx_labels_project")
+}
+
+model memberships {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  role         role
+  user_id      String     // ← CHANGED: removed @db.Uuid
+  workspace_id String     @db.Uuid
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workspaces   workspaces @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, workspace_id])
+}
+
+model notifications {
+  id           String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id      String                 // ← CHANGED: removed @db.Uuid
+  type         notification_type
+  title        String
+  body         String?
+  data         Json?
+  channel      notification_channel
+  priority     notification_priority?
+  status       notification_status
+  scheduled_at DateTime?              @db.Timestamptz(6)
+  sent_at      DateTime?              @db.Timestamptz(6)
+  delivered_at DateTime?              @db.Timestamptz(6)
+  read_at      DateTime?              @db.Timestamptz(6)
+  ttl_sec      Int?
+  deeplink     String?
+  retry_count  Int                    @default(0)
+  last_error   String?
+  created_at   DateTime               @default(now()) @db.Timestamptz(6)
+  created_by   String?                // ← CHANGED: removed @db.Uuid
+  users        users                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, status, scheduled_at], map: "idx_notifications_user_sched")
+}
+
+model participants {
+  id         String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  event_id   String              @db.Uuid
+  user_id    String?             // ← CHANGED: removed @db.Uuid
+  email      String
+  status     participant_status?
+  created_at DateTime            @default(now()) @db.Timestamptz(6)
+  events     events              @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users?              @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@unique([event_id, email])
+}
+
+model project_members {
+  id         String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id String       @db.Uuid
+  user_id    String       // ← CHANGED: removed @db.Uuid
+  role       project_role @default(MEMBER)
+  added_by   String?      @db.Uuid
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  projects   projects     @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, user_id])
+  @@index([project_id], map: "idx_project_members_project")
+  @@index([user_id], map: "idx_project_members_user")
+}
+
+model project_invitations {
+  id         String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id String            @db.Uuid
+  user_id    String            // ← CHANGED: removed @db.Uuid
+  role       project_role      @default(MEMBER)
+  status     invitation_status @default(PENDING)
+  invited_by String            // ← CHANGED: removed @db.Uuid
+  expires_at DateTime          @db.Timestamptz(6)
+  created_at DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at DateTime          @default(now()) @db.Timestamptz(6)
+  projects   projects          @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users             @relation("InviteeInvitations", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  inviter    users             @relation("InviterInvitations", fields: [invited_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, user_id])
+  @@index([user_id], map: "idx_project_invitations_user")
+  @@index([status], map: "idx_project_invitations_status")
+  @@index([expires_at], map: "idx_project_invitations_expires")
+}
+
+model projects {
+  id                  String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspace_id        String                @db.Uuid
+  name                String
+  description         String?
+  key                 String?               @db.VarChar(10)
+  issue_seq           Int                   @default(0)
+  board_type          String                @default("KANBAN") @db.VarChar(10)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  type                project_type          @default(PERSONAL)
+  activity_logs       activity_logs[]
+  boards              boards[]
+  events              events[]
+  labels              labels[]
+  project_members     project_members[]
+  project_invitations project_invitations[]
+  workspaces          workspaces            @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sprints             sprints[]
+  tasks               tasks[]
+
+  @@unique([workspace_id, key])
+  @@index([workspace_id])
+}
+
+model sprints {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id String    @db.Uuid
+  name       String
+  goal       String?
+  start_at   DateTime? @db.Timestamptz(6)
+  end_at     DateTime? @db.Timestamptz(6)
+  state      String    @default("PLANNED") @db.VarChar(10)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  projects   projects  @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks      tasks[]
+}
+
+model task_comments {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  task_id    String   @db.Uuid
+  user_id    String   // ← CHANGED: removed @db.Uuid
+  body       String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  tasks      tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([task_id, created_at], map: "idx_task_comments_task")
+}
+
+model task_labels {
+  task_id  String @db.Uuid
+  label_id String @db.Uuid
+  labels   labels @relation(fields: [label_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks    tasks  @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([task_id, label_id])
+}
+
+model task_assignees {
+  task_id     String   @db.Uuid
+  user_id     String   // ← CHANGED: removed @db.Uuid
+  assigned_at DateTime @default(now()) @db.Timestamptz(6)
+  assigned_by String?  // ← CHANGED: removed @db.Uuid
+  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([task_id, user_id])
+  @@index([task_id], map: "idx_task_assignees_task")
+  @@index([user_id], map: "idx_task_assignees_user")
+}
+
+model tasks {
+  id                                            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id                                    String           @db.Uuid
+  board_id                                      String           @db.Uuid
+  title                                         String
+  description                                   String?
+  created_by                                    String?          // ← CHANGED: removed @db.Uuid
+  due_at                                        DateTime?        @db.Timestamptz(6)
+  start_at                                      DateTime?        @db.Timestamptz(6)
+  priority                                      priority?
+  position                                      Decimal          @default(0) @db.Decimal(10, 3)
+  issue_key                                     String?          @unique(map: "ux_tasks_issue_key") @db.VarChar(32)
+  type                                          issue_type?
+  status                                        issue_status?    @default(TO_DO)
+  sprint_id                                     String?          @db.Uuid
+  epic_id                                       String?          @db.Uuid
+  parent_task_id                                String?          @db.Uuid
+  story_points                                  Int?
+  original_estimate_sec                         Int?
+  remaining_estimate_sec                        Int?
+  calendar_event_id                             String?
+  calendar_reminder_enabled                     Boolean          @default(false)
+  calendar_reminder_time                        Int?
+  last_synced_at                                DateTime?        @db.Timestamptz(6)
+  created_at                                    DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at                                    DateTime         @default(now()) @db.Timestamptz(6)
+  deleted_at                                    DateTime?        @db.Timestamptz(6)
+  activity_logs                                 activity_logs[]
+  attachments                                   attachments[]
+  checklists                                    checklists[]
+  issue_links_issue_links_source_task_idTotasks issue_links[]    @relation("issue_links_source_task_idTotasks")
+  issue_links_issue_links_target_task_idTotasks issue_links[]    @relation("issue_links_target_task_idTotasks")
+  task_comments                                 task_comments[]
+  task_labels                                   task_labels[]
+  task_assignees                                task_assignees[]
+  tasks_tasks_epic_idTotasks                    tasks?           @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
+  other_tasks_tasks_epic_idTotasks              tasks[]          @relation("tasks_epic_idTotasks")
+  tasks_tasks_parent_task_idTotasks             tasks?           @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
+  other_tasks_tasks_parent_task_idTotasks       tasks[]          @relation("tasks_parent_task_idTotasks")
+  sprints                                       sprints?         @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
+  boards                                        boards           @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_tasks_created_byTousers                 users?           @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  projects                                      projects         @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  time_entries                                  time_entries[]
+  watchers                                      watchers[]
+
+  @@index([board_id, position], map: "idx_tasks_board_position")
+  @@index([due_at], map: "idx_tasks_due")
+  @@index([status], map: "idx_tasks_status")
+}
+
+model time_entries {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  task_id      String    @db.Uuid
+  user_id      String    // ← CHANGED: removed @db.Uuid
+  start_at     DateTime  @db.Timestamptz(6)
+  end_at       DateTime? @db.Timestamptz(6)
+  duration_sec Int?
+  note         String?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  tasks        tasks     @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, start_at], map: "idx_time_entries_user_start")
+}
+
+model user_devices {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id        String    // ← CHANGED: removed @db.Uuid
+  fcm_token      String    @unique
+  platform       platform  @default(ANDROID)
+  device_model   String?
+  app_version    String?
+  locale         String?
+  timezone       String?
+  is_active      Boolean   @default(true)
+  last_active_at DateTime? @db.Timestamptz(6)
+  users          users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, is_active], map: "idx_user_devices_user_active")
+}
+
+model users {
+  id                            String                @id  // ← CHANGED: removed @default and @db.Uuid, will be manually assigned Firebase UID
+  name                          String
+  email                         String                @unique
+  password_hash                 String
+  avatar_url                    String?
+  // ← REMOVED: firebase_uid column
+  created_at                    DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime              @default(now()) @db.Timestamptz(6)
+  activity_logs                 activity_logs[]
+  events                        events[]
+  integration_tokens            integration_tokens[]
+  memberships                   memberships[]
+  notifications                 notifications[]
+  participants                  participants[]
+  project_members               project_members[]
+  project_invitations_invitee   project_invitations[] @relation("InviteeInvitations")
+  project_invitations_inviter   project_invitations[] @relation("InviterInvitations")
+  task_comments                 task_comments[]
+  task_assignees                task_assignees[]
+  tasks_tasks_created_byTousers tasks[]               @relation("tasks_created_byTousers")
+  time_entries                  time_entries[]
+  user_devices                  user_devices[]
+  watchers                      watchers[]
+  workspaces                    workspaces[]
+}
+
+model watchers {
+  task_id    String   @db.Uuid
+  user_id    String   // ← CHANGED: removed @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  tasks      tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([task_id, user_id])
+}
+
+model workspaces {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name          String
+  owner_id      String          // ← CHANGED: removed @db.Uuid
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  activity_logs activity_logs[]
+  memberships   memberships[]
+  projects      projects[]
+  users         users           @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+// Enums remain unchanged
+enum activity_action {
+  CREATED
+  UPDATED
+  DELETED
+  ADDED
+  REMOVED
+  MOVED
+  RENAMED
+  ASSIGNED
+  UNASSIGNED
+  COMPLETED
+  REOPENED
+  COMMENTED
+  ATTACHED
+  ARCHIVED
+  RESTORED
+  CHECKED
+  UNCHECKED
+  MEMBERSHIP
+}
+
+enum email_status {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum entity_type {
+  WORKSPACE
+  PROJECT
+  BOARD
+  TASK
+  CHECKLIST
+  CHECKLIST_ITEM
+  TASK_CHECKLIST_ITEM
+  COMMENT
+  ATTACHMENT
+  LABEL
+  SPRINT
+  EVENT
+  MEMBERSHIP
+}
+
+enum issue_link_type {
+  BLOCKS
+  IS_BLOCKED_BY
+  RELATES
+  DUPLICATES
+  IS_DUPLICATED_BY
+}
+
+enum issue_status {
+  TO_DO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum issue_type {
+  TASK
+  STORY
+  BUG
+  EPIC
+  SUBTASK
+}
+
+enum notification_channel {
+  PUSH
+  IN_APP
+  EMAIL
+}
+
+enum notification_priority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum notification_status {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum notification_type {
+  TASK_ASSIGNED
+  TASK_MOVED
+  TASK_COMMENT
+  PROJECT_INVITE
+  TIME_REMINDER
+  EVENT_INVITE
+  EVENT_UPDATED
+  MEETING_REMINDER
+  SYSTEM
+}
+
+enum participant_status {
+  INVITED
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+enum platform {
+  ANDROID
+  IOS
+  WEB
+}
+
+enum priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum project_type {
+  PERSONAL
+  TEAM
+}
+
+enum project_role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum invitation_status {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum provider {
+  GOOGLE_CALENDAR
+  OUTLOOK
+  ZOOM
+  SLACK
+}
+
+enum role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum token_status {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum event_type {
+  MEETING
+  MILESTONE
+  OTHER
+}
+
+enum recurrence_type {
+  NONE
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
