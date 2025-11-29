@@ -43,7 +43,7 @@ model attachments {
   url         String
   mime_type   String?
   size        Int?
-  uploaded_by String?  @db.Uuid
+  uploaded_by String?
   created_at  DateTime @default(now()) @db.Timestamptz(6)
   tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -236,7 +236,7 @@ model project_members {
   project_id String       @db.Uuid
   user_id    String
   role       project_role @default(MEMBER)
-  added_by   String?      @db.Uuid
+  added_by   String?
   created_at DateTime     @default(now()) @db.Timestamptz(6)
   projects   projects     @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users      users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -329,7 +329,7 @@ model task_assignees {
   task_id     String   @db.Uuid
   user_id     String
   assigned_at DateTime @default(now()) @db.Timestamptz(6)
-  assigned_by String?  @db.Uuid
+  assigned_by String?
   tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
