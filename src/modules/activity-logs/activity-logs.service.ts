@@ -744,22 +744,19 @@ export class ActivityLogsService {
     return this.prisma.activity_logs.findMany({
       where: {
         OR: [
-          // Logs where user is the actor (performed the action)
+          // ✅ Logs where user is the actor (performed the action)
+          // Example: User creates a task, comments, assigns, etc.
           { user_id: userId },
-          // Logs from projects where user is a member (team activities)
+
+          // ✅ Logs from projects where user is a member (team activities)
+          // This covers ALL project activities including:
+          // - MEMBERSHIP logs when user joins (ADDED) or leaves (REMOVED) project
+          // - Tasks created/updated by other members
+          // - Comments, assignments, moves by team members
+          // - Board/sprint changes, etc.
           ...(projectIds.length > 0
             ? [{ project_id: { in: projectIds } }]
             : []),
-          // ✅ FIX: Logs where user is affected (e.g., invitation accepted - user becomes member)
-          // When invitation is accepted, activity log is created with:
-          // - action: 'ADDED', entityType: 'MEMBERSHIP'
-          // - entityId: memberId (the person who joined)
-          // - userId: memberId (the person who joined)
-          // So we need to find logs where entityType=MEMBERSHIP and entityId=userId
-          {
-            entity_type: 'MEMBERSHIP' as const,
-            entity_id: userId, // Find logs where this user is the affected member
-          },
         ],
       },
       include: {
