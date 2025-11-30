@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Res } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { GoogleAuthService } from './google-auth.service';
@@ -165,7 +165,7 @@ export class GoogleAuthController {
     return this.googleAuthService.getIntegrationStatus(userId);
   }
 
-  @Get('disconnect')
+  @Post('disconnect')
   @UseGuards(CombinedAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Disconnect Google Calendar' })
