@@ -42,7 +42,7 @@ export class CombinedAuthGuard implements CanActivate {
 
       // Find or auto-sync the database user
       let dbUser = await this.prisma.users.findUnique({
-        where: { firebase_uid: decoded.uid },
+        where: { id: decoded.uid }, // ✅ Changed from firebase_uid to id
         select: { id: true },
       });
 
