@@ -224,6 +224,8 @@ export class ProjectsService {
   }
 
   async create(dto: CreateProjectDto, createdBy?: string): Promise<projects> {
+    console.log(`🔧 create() called - createdBy: ${createdBy}, dto:`, dto);
+
     // ✅ Auto-find user's default workspace if workspaceId not provided
     let workspaceId = dto.workspaceId;
 
@@ -327,6 +329,9 @@ export class ProjectsService {
       // ✅ Always create project_member record for creator with OWNER role
       // This is needed for both PERSONAL and TEAM projects
       if (createdBy) {
+        console.log(
+          `✅ Adding creator ${createdBy} as OWNER to project ${newProject.id}`,
+        );
         await tx.project_members.create({
           data: {
             project_id: newProject.id,
@@ -335,6 +340,10 @@ export class ProjectsService {
             added_by: createdBy,
           },
         });
+      } else {
+        console.warn(
+          `⚠️ WARNING: createdBy is ${createdBy}, NOT adding to project_members!`,
+        );
       }
 
       return newProject;
