@@ -43,6 +43,14 @@ export class TasksController {
     return this.svc.getQuickTaskDefaults(userId);
   }
 
+  @Get('my-assigned')
+  async getMyAssignedTasksInProject(
+    @Query('projectId', new ParseUUIDPipe()) projectId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks[]> {
+    return this.svc.getMyAssignedTasksInProject(userId, projectId);
+  }
+
   // TODO [TONIGHT]: Test calendar view with FE
   // - Filter tasks by date range
   // - Check calendar_event_id is returned

@@ -78,6 +78,55 @@ export class TasksService {
     });
   }
 
+  async getMyAssignedTasksInProject(
+    userId: string,
+    projectId: string,
+  ): Promise<tasks[]> {
+    return this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+        task_assignees: {
+          some: {
+            user_id: userId,
+          },
+        },
+      },
+      orderBy: [{ due_at: 'asc' }, { created_at: 'asc' }],
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
   getById(id: string): Promise<tasks | null> {
     return this.prisma.tasks.findFirst({
       where: { id },
