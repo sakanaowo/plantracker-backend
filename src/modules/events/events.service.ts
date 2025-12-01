@@ -269,9 +269,14 @@ export class EventsService {
       createGoogleMeet: boolean;
     },
   ) {
+    // ✅ Auto-add event creator to attendees if not already included
+    const allAttendeeIds = dto.attendeeIds.includes(userId)
+      ? dto.attendeeIds
+      : [...dto.attendeeIds, userId];
+
     // Get attendee emails
     const attendees = await this.prisma.users.findMany({
-      where: { id: { in: dto.attendeeIds } },
+      where: { id: { in: allAttendeeIds } },
       select: { email: true, id: true },
     });
 
@@ -318,10 +323,13 @@ export class EventsService {
         meet_link: meetLink,
         created_by: userId,
         participants: {
-          create: dto.attendeeIds.map((attendeeId) => ({
+          create: allAttendeeIds.map((attendeeId) => ({
             user_id: attendeeId,
             email: attendees.find((a) => a.id === attendeeId)?.email || '',
-            status: participant_status.INVITED,
+            status:
+              attendeeId === userId
+                ? participant_status.ACCEPTED // ✅ Creator auto-accepts
+                : participant_status.INVITED,
           })),
         },
       },
@@ -370,25 +378,30 @@ export class EventsService {
       this.logger.error('Failed to log event creation activity:', error);
     }
 
-    // 🔔 Send EVENT_INVITE notification to all attendees
+    // 🔔 Send EVENT_INVITE notification to all attendees (except creator)
     try {
       const creator = await this.prisma.users.findUnique({
         where: { id: userId },
         select: { name: true, email: true },
       });
 
-      await this.notificationsService.sendEventInvite({
-        eventId: event.id,
-        eventTitle: event.title,
-        eventDescription: event.description || undefined,
-        startTime: event.start_at,
-        endTime: event.end_at,
-        location: event.meet_link || undefined,
-        organizerId: userId,
-        organizerName: creator?.name || creator?.email || 'Unknown',
-        meetLink: meetLink || undefined,
-        inviteeIds: dto.attendeeIds,
-      });
+      // ✅ Only send invites to attendees who are not the creator
+      const inviteeIds = allAttendeeIds.filter((id) => id !== userId);
+
+      if (inviteeIds.length > 0) {
+        await this.notificationsService.sendEventInvite({
+          eventId: event.id,
+          eventTitle: event.title,
+          eventDescription: event.description || undefined,
+          startTime: event.start_at,
+          endTime: event.end_at,
+          location: event.meet_link || undefined,
+          organizerId: userId,
+          organizerName: creator?.name || creator?.email || 'Unknown',
+          meetLink: meetLink || undefined,
+          inviteeIds,
+        });
+      }
     } catch (error) {
       this.logger.error('Failed to send event invite notifications:', error);
     }
