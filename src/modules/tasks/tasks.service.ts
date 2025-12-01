@@ -1196,13 +1196,14 @@ export class TasksService {
 
   /**
    * Get tasks with calendar info for Calendar Tab
+   * Returns tasks in the same format as listByBoard for consistency
    */
   async getTasksForCalendar(
     projectId: string,
     startDate: Date,
     endDate: Date,
   ): Promise<any[]> {
-    const tasks = await this.prisma.tasks.findMany({
+    return this.prisma.tasks.findMany({
       where: {
         project_id: projectId,
         due_at: {
@@ -1212,15 +1213,11 @@ export class TasksService {
         deleted_at: null,
       },
       include: {
-        users_tasks_created_byTousers: {
-          select: {
-            name: true,
-            email: true,
-            avatar_url: true,
-          },
-        },
         boards: {
-          select: { name: true },
+          select: {
+            id: true,
+            name: true,
+          },
         },
         task_assignees: {
           include: {
@@ -1234,24 +1231,31 @@ export class TasksService {
             },
           },
         },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        users_tasks_created_byTousers: {
+          select: {
+            id: true,
+            name: true,
+            avatar_url: true,
+          },
+        },
       },
-      orderBy: { due_at: 'asc' },
+      orderBy: [
+        { due_at: 'asc' },
+        { priority: 'desc' },
+        { created_at: 'desc' },
+      ],
     });
-
-    return tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      description: task.description,
-      dueAt: task.due_at,
-      priority: task.priority,
-      hasReminder: task.calendar_reminder_enabled,
-      reminderTime: task.calendar_reminder_time,
-      calendarEventId: task.calendar_event_id,
-      lastSyncedAt: task.last_synced_at,
-      creator: task.users_tasks_created_byTousers,
-      boardName: task.boards.name,
-      assignees: task.task_assignees.map((a) => a.users),
-    }));
   }
 
   /**
