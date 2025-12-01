@@ -70,7 +70,7 @@ export class WorkspacesService {
 
     if (workspace.projects.length === 0) {
       try {
-        await this.createDefaultProjectForWorkspace(workspace.id);
+        await this.createDefaultProjectForWorkspace(workspace.id, userId);
       } catch (error) {
         // Log error nhưng không throw - workspace vẫn được tạo thành công
         console.error(
@@ -84,7 +84,10 @@ export class WorkspacesService {
     return workspace;
   }
 
-  private async createDefaultProjectForWorkspace(workspaceId: string) {
+  private async createDefaultProjectForWorkspace(
+    workspaceId: string,
+    userId: string,
+  ) {
     // Kiểm tra xem đã có project nào chưa (đề phòng race condition)
     const existingProjects = await this.prisma.projects.count({
       where: { workspace_id: workspaceId },
@@ -99,13 +102,16 @@ export class WorkspacesService {
 
     try {
       // Create default project (boards are automatically created by projectsService.create)
-      const project = await this.projectsService.create({
-        name: 'Default Project',
-        workspaceId: workspaceId,
-        key: 'DP',
-        description:
-          'Welcome to your first project! Start organizing your tasks here.',
-      });
+      const project = await this.projectsService.create(
+        {
+          name: 'Daily Tasks',
+          workspaceId: workspaceId,
+          key: 'DAILY',
+          description:
+            'Organize your daily tasks and track your progress here.',
+        },
+        userId, // Pass userId as createdBy to make user the project owner
+      );
 
       return project;
     } catch (error: unknown) {
@@ -123,12 +129,15 @@ export class WorkspacesService {
         );
         // Create project without specifying key (auto-generate)
         // Boards are automatically created by projectsService.create
-        const project = await this.projectsService.create({
-          name: 'Default Project',
-          workspaceId: workspaceId,
-          description:
-            'Welcome to your first project! Start organizing your tasks here.',
-        });
+        const project = await this.projectsService.create(
+          {
+            name: 'Daily Tasks',
+            workspaceId: workspaceId,
+            description:
+              'Organize your daily tasks and track your progress here.',
+          },
+          userId, // Pass userId as createdBy to make user the project owner
+        );
 
         return project;
       }
@@ -183,7 +192,7 @@ export class WorkspacesService {
 
   async listMine(userId: string) {
     console.log(`📋 listMine called - Getting workspaces for user: ${userId}`);
-    
+
     // Get workspaces where user is member or owner
     const [asMember, asOwner, viaProjects] = await Promise.all([
       // Workspaces where user is explicit member
@@ -228,16 +237,16 @@ export class WorkspacesService {
         // First time seeing this workspace
         map.set(w.id, {
           ...w,
-          is_owner: isOwner,  // Keep snake_case for database consistency
-          isOwner: isOwner,   // Add camelCase for frontend compatibility
+          is_owner: isOwner, // Keep snake_case for database consistency
+          isOwner: isOwner, // Add camelCase for frontend compatibility
         });
       } else if (isOwner) {
         // Already exists but user is owner, update the flag
         const existing = map.get(w.id);
         map.set(w.id, {
           ...existing,
-          is_owner: true,   // Keep snake_case
-          isOwner: true,    // Add camelCase
+          is_owner: true, // Keep snake_case
+          isOwner: true, // Add camelCase
         });
       }
     });
@@ -245,7 +254,9 @@ export class WorkspacesService {
     const result = Array.from(map.values());
     console.log(`📊 Total unique workspaces: ${result.length}`);
     result.forEach((w, index) => {
-      console.log(`   ${index + 1}. ${w.name} (owner: ${w.isOwner ? 'YES' : 'NO'}, id: ${w.id})`);
+      console.log(
+        `   ${index + 1}. ${w.name} (owner: ${w.isOwner ? 'YES' : 'NO'}, id: ${w.id})`,
+      );
     });
 
     return result;

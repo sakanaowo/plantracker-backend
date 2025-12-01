@@ -486,12 +486,29 @@ export class UsersService {
     console.log(`🗑️ Deleting user account: ${userId}`);
 
     try {
-      // Delete user (cascade will handle related data)
+      // 1. Delete from database first (cascade will handle related data)
       await this.prisma.users.delete({
         where: { id: userId },
       });
 
-      console.log(`✅ Successfully deleted user: ${userId}`);
+      console.log(`✅ Successfully deleted user from database: ${userId}`);
+
+      // 2. Delete from Firebase Authentication
+      try {
+        await admin.auth().deleteUser(userId);
+        console.log(`✅ Successfully deleted Firebase user: ${userId}`);
+      } catch (firebaseError) {
+        // Log Firebase error but don't fail the entire operation
+        // Database user is already deleted, Firebase deletion is best-effort
+        console.warn(
+          `⚠️ Failed to delete Firebase user ${userId}:`,
+          firebaseError,
+        );
+        console.warn(
+          `Database user deleted successfully, but Firebase user may still exist`,
+        );
+      }
+
       return { message: 'Account deleted successfully' };
     } catch (error) {
       console.error(`❌ Error deleting user ${userId}:`, error);
