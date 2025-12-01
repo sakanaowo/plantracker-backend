@@ -591,4 +591,52 @@ export class ProjectsService {
       },
     };
   }
+
+  /**
+   * Delete project by ID
+   * Only workspace owner or project admin can delete
+   */
+  async deleteProject(projectId: string, userId: string) {
+    console.log(`🗑️ Deleting project ${projectId} by user ${userId}`);
+
+    // Get project with workspace info and user's role
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      include: {
+        workspaces: true,
+        project_members: {
+          where: { user_id: userId },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // Check permission: must be workspace owner or project admin
+    const isWorkspaceOwner = project.workspaces.owner_id === userId;
+    const projectRole = project.project_members[0]?.role;
+    const isProjectAdmin = projectRole === 'OWNER' || projectRole === 'ADMIN';
+
+    if (!isWorkspaceOwner && !isProjectAdmin) {
+      throw new ForbiddenException(
+        'Only workspace owner or project admin can delete this project',
+      );
+    }
+
+    try {
+      // Delete project (cascade will handle related data)
+      await this.prisma.projects.delete({
+        where: { id: projectId },
+      });
+
+      console.log(`✅ Successfully deleted project: ${projectId}`);
+
+      return { message: 'Project deleted successfully' };
+    } catch (error) {
+      console.error(`❌ Error deleting project ${projectId}:`, error);
+      throw new BadRequestException('Failed to delete project');
+    }
+  }
 }

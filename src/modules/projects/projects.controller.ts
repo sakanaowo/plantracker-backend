@@ -5,6 +5,7 @@ import {
   Query,
   Get,
   Patch,
+  Delete,
   Param,
   UseGuards,
 } from '@nestjs/common';
@@ -61,5 +62,10 @@ export class ProjectsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.svc.getProjectSummary(projectId, userId);
+  }
+
+  @Delete(':id')
+  delete(@Param('id') projectId: string, @CurrentUser('id') userId: string) {
+    return this.svc.deleteProject(projectId, userId);
   }
 }

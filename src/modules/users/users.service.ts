@@ -477,4 +477,25 @@ export class UsersService {
       lastActiveAt: device.last_active_at ?? undefined,
     };
   }
+
+  /**
+   * Delete user account permanently
+   * This will cascade delete all related data
+   */
+  async deleteAccount(userId: string) {
+    console.log(`🗑️ Deleting user account: ${userId}`);
+
+    try {
+      // Delete user (cascade will handle related data)
+      await this.prisma.users.delete({
+        where: { id: userId },
+      });
+
+      console.log(`✅ Successfully deleted user: ${userId}`);
+      return { message: 'Account deleted successfully' };
+    } catch (error) {
+      console.error(`❌ Error deleting user ${userId}:`, error);
+      throw new BadRequestException('Failed to delete account');
+    }
+  }
 }
