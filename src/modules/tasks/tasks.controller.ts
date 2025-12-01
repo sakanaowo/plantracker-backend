@@ -9,6 +9,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -19,8 +20,10 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { tasks } from '@prisma/client';
 import { CurrentUser } from '../../auth/current-user.decorator';
+import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 
 @Controller('tasks')
+@UseGuards(CombinedAuthGuard)
 export class TasksController {
   constructor(private readonly svc: TasksService) {}
 
