@@ -43,6 +43,24 @@ export class TasksController {
     return this.svc.getQuickTaskDefaults(userId);
   }
 
+  // TODO [TONIGHT]: Test calendar view with FE
+  // - Filter tasks by date range
+  // - Check calendar_event_id is returned
+  // - Verify tasks show in FE calendar view
+  @Get('calendar')
+  async getTasksForCalendar(
+    @Query('projectId') projectId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    console.log('📅 Calendar request:', { projectId, startDate, endDate });
+    return this.svc.getTasksForCalendar(
+      projectId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
   @Get(':id')
   get(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks | null> {
     return this.svc.getById(id);
@@ -214,22 +232,5 @@ export class TasksController {
     console.log('  last_synced_at:', result.last_synced_at);
 
     return result;
-  }
-
-  // TODO [TONIGHT]: Test calendar view with FE
-  // - Filter tasks by date range
-  // - Check calendar_event_id is returned
-  // - Verify tasks show in FE calendar view
-  @Get('calendar')
-  async getTasksForCalendar(
-    @Query('projectId') projectId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
-    return this.svc.getTasksForCalendar(
-      projectId,
-      new Date(startDate),
-      new Date(endDate),
-    );
   }
 }
