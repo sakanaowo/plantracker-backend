@@ -118,7 +118,14 @@ export class ProjectsService {
     }
 
     console.log(`✅ Found project: ${project.name}`);
-    return project;
+
+    // Add current user's role to the response for easier frontend handling
+    const currentUserRole = project.project_members[0]?.role || null;
+
+    return {
+      ...project,
+      currentUserRole, // null if workspace owner but not project member
+    };
   }
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
@@ -593,8 +600,64 @@ export class ProjectsService {
   }
 
   /**
+   * Leave project - for members to remove themselves
+   * Cannot leave if you are the last owner
+   */
+  async leaveProject(projectId: string, userId: string) {
+    console.log(`👋 User ${userId} leaving project ${projectId}`);
+
+    // Get project member
+    const member = await this.prisma.project_members.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: userId,
+      },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException('You are not a member of this project');
+    }
+
+    // Prevent last owner from leaving
+    if (member.role === 'OWNER') {
+      const ownerCount = await this.prisma.project_members.count({
+        where: {
+          project_id: projectId,
+          role: 'OWNER',
+        },
+      });
+
+      if (ownerCount <= 1) {
+        throw new BadRequestException(
+          'Cannot leave project as the last owner. Please transfer ownership or delete the project.',
+        );
+      }
+    }
+
+    try {
+      // Remove user from project
+      await this.prisma.project_members.delete({
+        where: { id: member.id },
+      });
+
+      console.log(`✅ User ${userId} left project ${projectId}`);
+
+      return {
+        message: 'Successfully left the project',
+        projectId,
+      };
+    } catch (error) {
+      console.error(`❌ Error leaving project:`, error);
+      throw new BadRequestException('Failed to leave project');
+    }
+  }
+
+  /**
    * Delete project by ID
-   * Only workspace owner or project admin can delete
+   * Only project OWNER can delete (stricter than before)
    */
   async deleteProject(projectId: string, userId: string) {
     console.log(`🗑️ Deleting project ${projectId} by user ${userId}`);
@@ -614,14 +677,13 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    // Check permission: must be workspace owner or project admin
-    const isWorkspaceOwner = project.workspaces.owner_id === userId;
+    // Check permission: must be project OWNER (not just admin)
     const projectRole = project.project_members[0]?.role;
-    const isProjectAdmin = projectRole === 'OWNER' || projectRole === 'ADMIN';
+    const isProjectOwner = projectRole === 'OWNER';
 
-    if (!isWorkspaceOwner && !isProjectAdmin) {
+    if (!isProjectOwner) {
       throw new ForbiddenException(
-        'Only workspace owner or project admin can delete this project',
+        'Only project owner can delete this project',
       );
     }
 

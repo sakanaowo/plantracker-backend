@@ -68,4 +68,9 @@ export class ProjectsController {
   delete(@Param('id') projectId: string, @CurrentUser('id') userId: string) {
     return this.svc.deleteProject(projectId, userId);
   }
+
+  @Post(':id/leave')
+  leave(@Param('id') projectId: string, @CurrentUser('id') userId: string) {
+    return this.svc.leaveProject(projectId, userId);
+  }
 }

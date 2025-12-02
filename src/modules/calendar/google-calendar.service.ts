@@ -28,6 +28,21 @@ export class GoogleCalendarService {
     private prisma: PrismaService,
   ) {}
 
+  /**
+   * Format datetime for Google Calendar API
+   * Google Calendar requires local datetime WITHOUT timezone suffix (no Z)
+   * when using the timeZone field. If dateTime has Z, timeZone is ignored.
+   */
+  private formatLocalDateTime(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  }
+
   // TODO [TONIGHT]: Test with real Google OAuth - get actual auth URL
   async getAuthUrl(userId: string): Promise<string> {
     const oauth2Client = this.createOAuth2Client();
@@ -144,12 +159,12 @@ export class GoogleCalendarService {
         requestBody: {
           summary: event.title,
           start: {
-            dateTime: event.start_at.toISOString(),
-            timeZone: 'UTC',
+            dateTime: this.formatLocalDateTime(event.start_at),
+            timeZone: 'Asia/Ho_Chi_Minh',
           },
           end: {
-            dateTime: event.end_at.toISOString(),
-            timeZone: 'UTC',
+            dateTime: this.formatLocalDateTime(event.end_at),
+            timeZone: 'Asia/Ho_Chi_Minh',
           },
           location: event.location || undefined,
           description: 'Created from PlanTracker',
@@ -398,7 +413,7 @@ export class GoogleCalendarService {
       );
       const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
 
-      console.log('  Creating event at:', reminderTime.toISOString());
+      console.log('  Creating event at:', reminderTime);
 
       const googleEvent: calendar_v3.Schema$Event = (
         await calendar.events.insert({
@@ -407,11 +422,11 @@ export class GoogleCalendarService {
             summary: `⏰ Nhắc nhở: ${title}`,
             description: `Đây là nhắc nhở cho task: ${title}\n\nTask ID: ${taskId}`,
             start: {
-              dateTime: reminderTime.toISOString(),
+              dateTime: this.formatLocalDateTime(reminderTime),
               timeZone: 'Asia/Ho_Chi_Minh',
             },
             end: {
-              dateTime: reminderEndTime.toISOString(),
+              dateTime: this.formatLocalDateTime(reminderEndTime),
               timeZone: 'Asia/Ho_Chi_Minh',
             },
             reminders: {
@@ -467,11 +482,11 @@ export class GoogleCalendarService {
         requestBody: {
           summary: `⏰ Nhắc nhở: ${title}`,
           start: {
-            dateTime: reminderTime.toISOString(),
+            dateTime: this.formatLocalDateTime(reminderTime),
             timeZone: 'Asia/Ho_Chi_Minh',
           },
           end: {
-            dateTime: reminderEndTime.toISOString(),
+            dateTime: this.formatLocalDateTime(reminderEndTime),
             timeZone: 'Asia/Ho_Chi_Minh',
           },
         },
@@ -542,11 +557,11 @@ export class GoogleCalendarService {
         summary: eventData.title,
         description: eventData.description,
         start: {
-          dateTime: eventData.startAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.startAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         },
         end: {
-          dateTime: eventData.endAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.endAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         },
         attendees: eventData.attendeeEmails.map((email) => ({
@@ -633,11 +648,11 @@ export class GoogleCalendarService {
 
       if (eventData.startAt && eventData.endAt) {
         updates.start = {
-          dateTime: eventData.startAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.startAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         };
         updates.end = {
-          dateTime: eventData.endAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.endAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         };
       }
