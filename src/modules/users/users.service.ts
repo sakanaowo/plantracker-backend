@@ -54,6 +54,22 @@ export class UsersService {
           },
         });
       } else {
+        // Check if orphan record exists with same email (old UID)
+        // TODO: remove this logic after test
+        const orphanUser = await this.prisma.users.findUnique({
+          where: { email },
+        });
+
+        if (orphanUser) {
+          console.log(
+            `[ensureFromFirebase] Found orphan record with email ${email}, updating UID from ${orphanUser.id} to ${uid}`,
+          );
+          // Delete orphan and create new record with correct UID
+          await this.prisma.users.delete({
+            where: { id: orphanUser.id },
+          });
+        }
+
         // New user, create with Firebase UID as id
         console.log('[ensureFromFirebase] Creating new user');
         user = await this.prisma.users.create({
@@ -486,29 +502,33 @@ export class UsersService {
     console.log(`🗑️ Deleting user account: ${userId}`);
 
     try {
-      // 1. Delete from database first (cascade will handle related data)
+      // 1. Delete from Firebase Authentication FIRST
+      // This prevents orphan DB records if Firebase deletion fails
+      try {
+        await admin.auth().deleteUser(userId);
+        console.log(`✅ Successfully deleted Firebase user: ${userId}`);
+      } catch (firebaseError: any) {
+        // If Firebase user doesn't exist, that's okay - continue with DB deletion
+        if (firebaseError?.code === 'auth/user-not-found') {
+          console.log(
+            `ℹ️ Firebase user ${userId} not found, proceeding with DB deletion`,
+          );
+        } else {
+          // Other Firebase errors should fail the operation
+          console.error(
+            `❌ Failed to delete Firebase user ${userId}:`,
+            firebaseError,
+          );
+          throw new BadRequestException('Failed to delete Firebase account');
+        }
+      }
+
+      // 2. Delete from database (cascade will handle related data)
       await this.prisma.users.delete({
         where: { id: userId },
       });
 
       console.log(`✅ Successfully deleted user from database: ${userId}`);
-
-      // 2. Delete from Firebase Authentication
-      try {
-        await admin.auth().deleteUser(userId);
-        console.log(`✅ Successfully deleted Firebase user: ${userId}`);
-      } catch (firebaseError) {
-        // Log Firebase error but don't fail the entire operation
-        // Database user is already deleted, Firebase deletion is best-effort
-        console.warn(
-          `⚠️ Failed to delete Firebase user ${userId}:`,
-          firebaseError,
-        );
-        console.warn(
-          `Database user deleted successfully, but Firebase user may still exist`,
-        );
-      }
-
       return { message: 'Account deleted successfully' };
     } catch (error) {
       console.error(`❌ Error deleting user ${userId}:`, error);
