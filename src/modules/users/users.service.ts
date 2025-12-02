@@ -272,7 +272,16 @@ export class UsersService {
     return this.prisma.users.findUnique({ where: { id } });
   }
 
-  async updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
+  async updateMeById(
+    id: string,
+    data: {
+      name?: string;
+      avatar_url?: string;
+      bio?: string;
+      job_title?: string;
+      phone_number?: string;
+    },
+  ) {
     console.log('🔄 updateMeById called with:', { id, data });
 
     // Update user profile
@@ -281,6 +290,9 @@ export class UsersService {
       data: {
         name: data.name ?? undefined,
         avatar_url: data.avatar_url ?? undefined,
+        bio: data.bio ?? undefined,
+        job_title: data.job_title ?? undefined,
+        phone_number: data.phone_number ?? undefined,
         updated_at: new Date(),
       },
     });
