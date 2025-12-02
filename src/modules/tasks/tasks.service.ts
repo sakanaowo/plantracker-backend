@@ -1291,7 +1291,7 @@ export class TasksService {
             },
           },
         },
-        users_tasks_created_byTousers: {
+        users: {
           select: {
             id: true,
             name: true,

@@ -582,10 +582,14 @@ export class ActivityLogsService {
       userId: params.userId,
       action: 'ADDED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
       entityName: params.memberName,
       newValue: params.projectName,
-      metadata: { role: params.role, ...params.metadata },
+      metadata: {
+        role: params.role,
+        memberId: params.memberId,
+        ...params.metadata,
+      }, // Store memberId in metadata instead
     });
   }
 
@@ -602,10 +606,11 @@ export class ActivityLogsService {
       userId: params.userId,
       action: 'UPDATED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
       entityName: params.memberName,
       oldValue: { role: params.oldRole },
       newValue: { role: params.newRole },
+      metadata: { memberId: params.memberId }, // Store memberId in metadata instead
     });
   }
 
@@ -621,9 +626,9 @@ export class ActivityLogsService {
       userId: params.userId,
       action: 'REMOVED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
       entityName: params.memberName,
-      metadata: { role: params.role },
+      metadata: { role: params.role, memberId: params.memberId }, // Store memberId in metadata instead
     });
   }
 

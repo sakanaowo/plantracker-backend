@@ -198,7 +198,7 @@ export class ProjectMembersService {
         expires_at: expiresAt,
       },
       include: {
-        users: {
+        users_project_invitations_user_idTousers: {
           select: {
             id: true,
             name: true,
@@ -426,7 +426,7 @@ export class ProjectMembersService {
             description: true,
           },
         },
-        inviter: {
+        users_project_invitations_invited_byTousers: {
           select: {
             id: true,
             name: true,
@@ -456,8 +456,8 @@ export class ProjectMembersService {
       where: { id: invitationId },
       include: {
         projects: true,
-        users: true,
-        inviter: true,
+        users_project_invitations_user_idTousers: true,
+        users_project_invitations_invited_byTousers: true,
       },
     });
 
@@ -552,7 +552,7 @@ export class ProjectMembersService {
         projectId: invitation.project_id,
         userId: userId, // The user who accepted (not inviter)
         memberId: userId,
-        memberName: invitation.users.name,
+        memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
         projectName: invitation.projects.name,
         metadata: {
@@ -570,12 +570,13 @@ export class ProjectMembersService {
           {
             type: 'PROJECT_INVITE_ACCEPTED',
             title: 'Lời mời được chấp nhận',
-            body: `${invitation.users.name} đã chấp nhận lời mời tham gia project "${invitation.projects.name}"`,
+            body: `${invitation.users_project_invitations_user_idTousers.name} đã chấp nhận lời mời tham gia project "${invitation.projects.name}"`,
             data: {
               projectId: invitation.project_id,
               invitationId: invitationId,
               acceptedBy: userId,
-              acceptedByName: invitation.users.name,
+              acceptedByName:
+                invitation.users_project_invitations_user_idTousers.name,
               role: invitation.role,
             },
             priority: 'HIGH',
@@ -591,7 +592,7 @@ export class ProjectMembersService {
         projectId: invitation.project_id,
         userId: invitation.invited_by,
         memberId: userId,
-        memberName: invitation.users.name,
+        memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
       });
 
@@ -602,12 +603,13 @@ export class ProjectMembersService {
           {
             type: 'PROJECT_INVITE_DECLINED',
             title: 'Lời mời bị từ chối',
-            body: `${invitation.users.name} đã từ chối lời mời tham gia project "${invitation.projects.name}"`,
+            body: `${invitation.users_project_invitations_user_idTousers.name} đã từ chối lời mời tham gia project "${invitation.projects.name}"`,
             data: {
               projectId: invitation.project_id,
               invitationId: invitationId,
               declinedBy: userId,
-              declinedByName: invitation.users.name,
+              declinedByName:
+                invitation.users_project_invitations_user_idTousers.name,
               role: invitation.role,
             },
             priority: 'HIGH',
