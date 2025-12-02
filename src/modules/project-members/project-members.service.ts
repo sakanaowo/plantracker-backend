@@ -80,8 +80,8 @@ export class ProjectMembersService {
       });
       console.log('✅ Project converted to TEAM');
 
-      // Add workspace owner as project OWNER member
-      console.log('🔧 DEBUG: Creating project_member with data:', {
+      // Add/Update workspace owner as project OWNER member (use upsert to avoid duplicate)
+      console.log('🔧 DEBUG: Upserting project_member with data:', {
         project_id: projectId,
         user_id: invitedBy,
         user_id_type: typeof invitedBy,
@@ -91,17 +91,26 @@ export class ProjectMembersService {
       });
 
       try {
-        await this.prisma.project_members.create({
-          data: {
+        await this.prisma.project_members.upsert({
+          where: {
+            project_id_user_id: {
+              project_id: projectId,
+              user_id: invitedBy,
+            },
+          },
+          update: {
+            role: 'OWNER', // Ensure role is OWNER
+          },
+          create: {
             project_id: projectId,
             user_id: invitedBy, // The workspace owner becomes project owner
             role: 'OWNER',
             added_by: invitedBy,
           },
         });
-        console.log('✅ Workspace owner added as project OWNER');
+        console.log('✅ Workspace owner added/updated as project OWNER');
       } catch (error) {
-        console.error('❌ Failed to create project_member:', error);
+        console.error('❌ Failed to upsert project_member:', error);
         throw error;
       }
 
