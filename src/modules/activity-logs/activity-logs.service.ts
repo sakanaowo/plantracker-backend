@@ -656,9 +656,9 @@ export class ActivityLogsService {
       entityName: params.projectName, // ✅ PROJECT NAME
       oldValue: { role: params.oldRole },
       newValue: { role: params.newRole },
-      metadata: { 
+      metadata: {
         memberId: params.memberId,
-        memberName: params.memberName // ✅ WHO got role change
+        memberName: params.memberName, // ✅ WHO got role change
       },
     });
   }
@@ -680,10 +680,10 @@ export class ActivityLogsService {
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
       entityName: params.projectName, // ✅ PROJECT NAME (what they left/were removed from)
-      metadata: { 
+      metadata: {
         role: params.role,
         memberId: params.memberId,
-        memberName: params.memberName // ✅ WHO left or was removed
+        memberName: params.memberName, // ✅ WHO left or was removed
       },
     });
   }

@@ -654,7 +654,7 @@ export class ProjectsService {
       await this.activityLogsService.logMemberRemoved({
         projectId,
         workspaceId: member.projects.workspace_id,
-        userId,  // Who left (same as memberId for self-leave)
+        userId, // Who left (same as memberId for self-leave)
         memberId: userId,
         memberName: member.users.name,
         role: member.role,

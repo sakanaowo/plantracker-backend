@@ -135,7 +135,7 @@ export class LabelsService {
     return updated;
   }
 
-    /**
+  /**
    * Delete label (will cascade to task_labels)
    */
   async delete(labelId: string, userId: string) {
