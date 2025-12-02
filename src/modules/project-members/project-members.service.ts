@@ -116,6 +116,7 @@ export class ProjectMembersService {
 
       // Log conversion activity
       await this.activityLogsService.logProjectUpdated({
+        workspaceId: project.workspace_id, // ✅ Add workspace
         projectId,
         userId: invitedBy,
         projectName: project.name,
@@ -303,6 +304,12 @@ export class ProjectMembersService {
       where: { id: memberId },
       include: {
         users: true,
+        projects: {
+          select: {
+            workspace_id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -345,11 +352,13 @@ export class ProjectMembersService {
     // Log activity
     await this.activityLogsService.logMemberRoleUpdated({
       projectId,
+      workspaceId: member.projects.workspace_id,
       userId: updatedBy,
       memberId,
       memberName: member.users.name,
       oldRole: member.role,
       newRole: dto.role,
+      projectName: member.projects.name, // ✅ Add project name
     });
 
     return updated;
@@ -367,6 +376,12 @@ export class ProjectMembersService {
       where: { id: memberId },
       include: {
         users: true,
+        projects: {
+          select: {
+            workspace_id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -396,10 +411,12 @@ export class ProjectMembersService {
     // Log activity
     await this.activityLogsService.logMemberRemoved({
       projectId,
+      workspaceId: member.projects.workspace_id,
       userId: removedBy,
       memberId,
       memberName: member.users.name,
       role: member.role,
+      projectName: member.projects.name, // ✅ Add project name
     });
 
     return { success: true };
@@ -590,10 +607,12 @@ export class ProjectMembersService {
       // Log invitation declined
       await this.activityLogsService.logMemberRemoved({
         projectId: invitation.project_id,
+        workspaceId: invitation.projects.workspace_id,
         userId: invitation.invited_by,
         memberId: userId,
         memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
+        projectName: invitation.projects.name, // ✅ Add project name
       });
 
       // ✅ FIX: Send notification to inviter when invitation is declined
@@ -673,6 +692,7 @@ export class ProjectMembersService {
 
     // Log activity
     await this.activityLogsService.logProjectUpdated({
+      workspaceId: project.workspace_id, // ✅ Add workspace
       projectId,
       userId,
       projectName: project.name,

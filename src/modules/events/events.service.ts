@@ -41,6 +41,7 @@ export class EventsService {
     // Create activity log for event creation
     try {
       await this.activityLogsService.logEventCreated({
+        workspaceId: event.projects?.workspace_id,
         projectId: createEventDto.projectId,
         eventId: event.id,
         userId: userId,
@@ -120,6 +121,7 @@ export class EventsService {
 
     // Log event update
     await this.activityLogsService.logEventUpdated({
+      workspaceId: updatedEvent.projects.workspace_id, // ✅ Add workspace
       projectId: updatedEvent.project_id,
       eventId: updatedEvent.id,
       userId,
@@ -151,6 +153,7 @@ export class EventsService {
 
     // Log event deletion
     await this.activityLogsService.logEventDeleted({
+      workspaceId: event.projects.workspace_id, // ✅ Add workspace
       projectId: event.project_id,
       eventId: event.id,
       userId,
@@ -346,6 +349,11 @@ export class EventsService {
             email: true,
           },
         },
+        projects: {
+          select: {
+            workspace_id: true,
+          },
+        },
       },
     });
 
@@ -366,6 +374,7 @@ export class EventsService {
     // ✅ Log event creation activity
     try {
       await this.activityLogsService.logEventCreated({
+        workspaceId: event.projects?.workspace_id,
         projectId: dto.projectId,
         eventId: event.id,
         userId,

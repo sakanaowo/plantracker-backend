@@ -606,7 +606,7 @@ export class ProjectsService {
   async leaveProject(projectId: string, userId: string) {
     console.log(`👋 User ${userId} leaving project ${projectId}`);
 
-    // Get project member
+    // Get project member with project details
     const member = await this.prisma.project_members.findFirst({
       where: {
         project_id: projectId,
@@ -614,6 +614,13 @@ export class ProjectsService {
       },
       include: {
         users: true,
+        projects: {
+          select: {
+            id: true,
+            name: true,
+            workspace_id: true,
+          },
+        },
       },
     });
 
@@ -641,6 +648,17 @@ export class ProjectsService {
       // Remove user from project
       await this.prisma.project_members.delete({
         where: { id: member.id },
+      });
+
+      // ✅ Log activity - user left project themselves
+      await this.activityLogsService.logMemberRemoved({
+        projectId,
+        workspaceId: member.projects.workspace_id,
+        userId,  // Who left (same as memberId for self-leave)
+        memberId: userId,
+        memberName: member.users.name,
+        role: member.role,
+        projectName: member.projects.name,
       });
 
       console.log(`✅ User ${userId} left project ${projectId}`);
@@ -688,6 +706,14 @@ export class ProjectsService {
     }
 
     try {
+      // ✅ Log BEFORE deletion (so we can still access project data)
+      await this.activityLogsService.logProjectDeleted({
+        workspaceId: project.workspace_id,
+        projectId,
+        userId,
+        projectName: project.name,
+      });
+
       // Delete project (cascade will handle related data)
       await this.prisma.projects.delete({
         where: { id: projectId },

@@ -168,7 +168,22 @@ export class ChecklistsService {
 
     // Log item update
     if (updatedBy && dto.content && dto.content !== currentItem.content) {
+      // Fetch task for workspace/project/board context
+      const task = await this.prisma.tasks.findUnique({
+        where: { id: currentItem.checklists.task_id },
+        include: {
+          projects: {
+            select: {
+              workspace_id: true,
+            },
+          },
+        },
+      });
+
       await this.activityLogsService.logChecklistUpdated({
+        workspaceId: task?.projects?.workspace_id,
+        projectId: task?.project_id,
+        boardId: task?.board_id,
         taskId: currentItem.checklists.task_id,
         checklistItemId: itemId,
         userId: updatedBy,
@@ -209,8 +224,23 @@ export class ChecklistsService {
 
     // Log toggle action
     if (toggledBy) {
+      // Fetch task for workspace/project/board context
+      const task = await this.prisma.tasks.findUnique({
+        where: { id: currentItem.checklists.task_id },
+        include: {
+          projects: {
+            select: {
+              workspace_id: true,
+            },
+          },
+        },
+      });
+
       if (newDoneStatus) {
         await this.activityLogsService.logChecklistChecked({
+          workspaceId: task?.projects?.workspace_id,
+          projectId: task?.project_id,
+          boardId: task?.board_id,
           taskId: currentItem.checklists.task_id,
           checklistItemId: itemId,
           userId: toggledBy,
@@ -218,6 +248,9 @@ export class ChecklistsService {
         });
       } else {
         await this.activityLogsService.logChecklistUnchecked({
+          workspaceId: task?.projects?.workspace_id,
+          projectId: task?.project_id,
+          boardId: task?.board_id,
           taskId: currentItem.checklists.task_id,
           checklistItemId: itemId,
           userId: toggledBy,
@@ -255,7 +288,22 @@ export class ChecklistsService {
 
     // Log item deletion
     if (deletedBy) {
+      // Fetch task for workspace/project/board context
+      const task = await this.prisma.tasks.findUnique({
+        where: { id: item.checklists.task_id },
+        include: {
+          projects: {
+            select: {
+              workspace_id: true,
+            },
+          },
+        },
+      });
+
       await this.activityLogsService.logChecklistDeleted({
+        workspaceId: task?.projects?.workspace_id,
+        projectId: task?.project_id,
+        boardId: task?.board_id,
         taskId: item.checklists.task_id,
         checklistItemId: itemId,
         userId: deletedBy,

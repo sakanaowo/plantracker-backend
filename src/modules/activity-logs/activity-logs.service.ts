@@ -431,12 +431,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistChecked(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -448,12 +454,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistUnchecked(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -465,6 +477,9 @@ export class ActivityLogsService {
   }
 
   async logChecklistUpdated(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
@@ -472,6 +487,9 @@ export class ActivityLogsService {
     newContent: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -485,12 +503,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistDeleted(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -525,6 +549,7 @@ export class ActivityLogsService {
   }
 
   async logProjectUpdated(params: {
+    workspaceId?: string;
     projectId: string;
     userId: string;
     projectName?: string;
@@ -532,6 +557,7 @@ export class ActivityLogsService {
     newValue: any;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
@@ -540,6 +566,23 @@ export class ActivityLogsService {
       entityName: params.projectName,
       oldValue: params.oldValue,
       newValue: params.newValue,
+    });
+  }
+
+  async logProjectDeleted(params: {
+    workspaceId: string;
+    projectId: string;
+    userId: string;
+    projectName: string;
+  }) {
+    return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'DELETED',
+      entityType: 'PROJECT',
+      entityId: params.projectId,
+      entityName: params.projectName,
     });
   }
 
@@ -583,11 +626,11 @@ export class ActivityLogsService {
       action: 'ADDED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.memberName,
-      newValue: params.projectName,
+      entityName: params.projectName, // ✅ PROJECT NAME (what was joined)
       metadata: {
         role: params.role,
         memberId: params.memberId,
+        memberName: params.memberName, // ✅ WHO joined (moved from entityName)
         ...params.metadata,
       }, // Store memberId in metadata instead
     });
@@ -600,17 +643,23 @@ export class ActivityLogsService {
     memberName: string;
     oldRole: string;
     newRole: string;
+    projectName?: string;
+    workspaceId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.memberName,
+      entityName: params.projectName, // ✅ PROJECT NAME
       oldValue: { role: params.oldRole },
       newValue: { role: params.newRole },
-      metadata: { memberId: params.memberId }, // Store memberId in metadata instead
+      metadata: { 
+        memberId: params.memberId,
+        memberName: params.memberName // ✅ WHO got role change
+      },
     });
   }
 
@@ -620,15 +669,22 @@ export class ActivityLogsService {
     memberId: string;
     memberName: string;
     role: string;
+    projectName?: string;
+    workspaceId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'REMOVED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.memberName,
-      metadata: { role: params.role, memberId: params.memberId }, // Store memberId in metadata instead
+      entityName: params.projectName, // ✅ PROJECT NAME (what they left/were removed from)
+      metadata: { 
+        role: params.role,
+        memberId: params.memberId,
+        memberName: params.memberName // ✅ WHO left or was removed
+      },
     });
   }
 
@@ -838,6 +894,7 @@ export class ActivityLogsService {
    * Log when an event is created in a project
    */
   async logEventCreated(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
@@ -847,6 +904,7 @@ export class ActivityLogsService {
     endAt: Date;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'CREATED',
@@ -865,6 +923,7 @@ export class ActivityLogsService {
    * Log when an event is updated
    */
   async logEventUpdated(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
@@ -873,6 +932,7 @@ export class ActivityLogsService {
     newValue?: any;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
@@ -888,12 +948,14 @@ export class ActivityLogsService {
    * Log when an event is deleted from a project
    */
   async logEventDeleted(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
     eventTitle: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'DELETED',
