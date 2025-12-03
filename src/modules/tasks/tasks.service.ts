@@ -127,6 +127,95 @@ export class TasksService {
     });
   }
 
+  /**
+   * Get ALL tasks in a project (not just assigned to current user)
+   * For "All Work" view in project - shows complete project overview
+   */
+  async getAllTasksInProject(projectId: string): Promise<tasks[]> {
+    return this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+      },
+      orderBy: [
+        { status: 'asc' }, // Group by status first (TO_DO, IN_PROGRESS, DONE)
+        { due_at: 'asc' }, // Then by due date
+        { created_at: 'desc' }, // Then by creation date (newest first)
+      ],
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get statistics for All Work view
+   * Returns counts by status, overdue tasks, and total tasks
+   */
+  async getAllWorkStatistics(projectId: string) {
+    const now = new Date();
+
+    // Get all active tasks
+    const allTasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+      },
+      select: {
+        status: true,
+        due_at: true,
+      },
+    });
+
+    // Count by status
+    const todoCount = allTasks.filter((t) => t.status === 'TO_DO').length;
+    const inProgressCount = allTasks.filter(
+      (t) => t.status === 'IN_PROGRESS',
+    ).length;
+    const doneCount = allTasks.filter((t) => t.status === 'DONE').length;
+
+    // Count overdue (has due_at in past and not DONE)
+    const overdueCount = allTasks.filter(
+      (t) => t.due_at && t.due_at < now && t.status !== 'DONE',
+    ).length;
+
+    return {
+      totalCount: allTasks.length,
+      todoCount,
+      inProgressCount,
+      doneCount,
+      overdueCount,
+    };
+  }
+
   getById(id: string): Promise<tasks | null> {
     return this.prisma.tasks.findFirst({
       where: { id },

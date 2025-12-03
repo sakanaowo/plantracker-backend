@@ -54,6 +54,20 @@ export class TasksController {
     return this.svc.getMyAssignedTasksInProject(userId, projectId);
   }
 
+  @Get('project/:projectId/all')
+  async getAllTasksInProject(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+  ): Promise<tasks[]> {
+    return this.svc.getAllTasksInProject(projectId);
+  }
+
+  @Get('project/:projectId/statistics')
+  async getAllWorkStatistics(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+  ) {
+    return this.svc.getAllWorkStatistics(projectId);
+  }
+
   // TODO [TONIGHT]: Test calendar view with FE
   // - Filter tasks by date range
   // - Check calendar_event_id is returned
