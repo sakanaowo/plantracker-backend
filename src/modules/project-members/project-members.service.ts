@@ -501,43 +501,37 @@ export class ProjectMembersService {
 
     const updatedStatus = action === 'accept' ? 'ACCEPTED' : 'DECLINED';
 
-    // Update invitation status
-    const updatedInvitation = await this.prisma.project_invitations.update({
-      where: { id: invitationId },
-      data: {
-        status: updatedStatus,
-        updated_at: new Date(),
-      },
-    });
-
-    // If accepted, add user as project member
-    if (action === 'accept') {
-      // Check if already a member (safety check)
-      const existingMember = await this.prisma.project_members.findUnique({
-        where: {
-          project_id_user_id: {
-            project_id: invitation.project_id,
-            user_id: userId,
-          },
-        },
-      });
-
-      if (!existingMember) {
-        await this.prisma.project_members.create({
-          data: {
-            project_id: invitation.project_id,
-            user_id: userId,
-            role: invitation.role,
-            added_by: invitation.invited_by,
+    // ✅ FIX: Wrap all database operations in a transaction for atomicity
+    const result = await this.prisma.$transaction(async (tx) => {
+      // If accepted, add user as project member FIRST (before updating status)
+      if (action === 'accept') {
+        // Check if already a member (safety check)
+        const existingMember = await tx.project_members.findUnique({
+          where: {
+            project_id_user_id: {
+              project_id: invitation.project_id,
+              user_id: userId,
+            },
           },
         });
-        console.log('✅ Added user to project_members');
-      }
 
-      // AUTO-ADD: Add user to workspace memberships if not already a member
-      const workspaceId = invitation.projects.workspace_id;
-      const existingWorkspaceMembership =
-        await this.prisma.memberships.findUnique({
+        if (!existingMember) {
+          await tx.project_members.create({
+            data: {
+              project_id: invitation.project_id,
+              user_id: userId,
+              role: invitation.role,
+              added_by: invitation.invited_by,
+            },
+          });
+          console.log('✅ Added user to project_members');
+        } else {
+          console.log('ℹ️ User already a member, skipping create');
+        }
+
+        // AUTO-ADD: Add user to workspace memberships if not already a member
+        const workspaceId = invitation.projects.workspace_id;
+        const existingWorkspaceMembership = await tx.memberships.findUnique({
           where: {
             user_id_workspace_id: {
               user_id: userId,
@@ -546,23 +540,40 @@ export class ProjectMembersService {
           },
         });
 
-      if (!existingWorkspaceMembership) {
-        await this.prisma.memberships.create({
-          data: {
-            user_id: userId,
-            workspace_id: workspaceId,
-            role: 'MEMBER', // Default workspace member role
-          },
-        });
-        console.log(
-          `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
-        );
-      } else {
-        console.log(
-          `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
-        );
+        if (!existingWorkspaceMembership) {
+          await tx.memberships.create({
+            data: {
+              user_id: userId,
+              workspace_id: workspaceId,
+              role: 'MEMBER', // Default workspace member role
+            },
+          });
+          console.log(
+            `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
+          );
+        } else {
+          console.log(
+            `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
+          );
+        }
       }
 
+      // Update invitation status AFTER successfully creating member (if accept)
+      const updatedInvitation = await tx.project_invitations.update({
+        where: { id: invitationId },
+        data: {
+          status: updatedStatus,
+          updated_at: new Date(),
+        },
+      });
+
+      return updatedInvitation;
+    });
+
+    const updatedInvitation = result;
+
+    // Post-transaction operations (notifications and logging)
+    if (action === 'accept') {
       // Log member added when accepted (separate from invitation sent)
       await this.activityLogsService.logMemberAdded({
         workspaceId: invitation.projects.workspace_id,
