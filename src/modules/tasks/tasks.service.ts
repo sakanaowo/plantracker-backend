@@ -74,6 +74,12 @@ export class TasksService {
             },
           },
         },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
   }
@@ -241,6 +247,12 @@ export class TasksService {
                 color: true,
               },
             },
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },
