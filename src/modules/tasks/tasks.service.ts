@@ -451,13 +451,18 @@ export class TasksService {
     }
 
     // Prepare update data with type conversions
+    // ✅ ONLY update fields that are explicitly set AND not null
     const updateData: any = {};
 
-    if (dto.title !== undefined) updateData.title = dto.title;
-    if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.title !== undefined && dto.title !== null)
+      updateData.title = dto.title;
+    if (dto.description !== undefined && dto.description !== null)
+      updateData.description = dto.description;
+    // ⚠️ Position should ONLY be updated via move() method, not here
+    if (dto.position !== undefined && dto.position !== null)
+      updateData.position = dto.position;
 
-    // Date fields - convert string to Date
+    // Date fields - convert string to Date (allow explicit null to clear dates)
     if (dto.dueAt !== undefined) {
       updateData.due_at = dto.dueAt ? new Date(dto.dueAt) : null;
     }
@@ -465,29 +470,45 @@ export class TasksService {
       updateData.start_at = dto.startAt ? new Date(dto.startAt) : null;
     }
 
-    // Enum fields
-    if (dto.priority !== undefined) updateData.priority = dto.priority;
-    if (dto.type !== undefined) updateData.type = dto.type;
-    if (dto.status !== undefined) updateData.status = dto.status;
+    // Enum fields - skip if null
+    if (dto.priority !== undefined && dto.priority !== null)
+      updateData.priority = dto.priority;
+    if (dto.type !== undefined && dto.type !== null) updateData.type = dto.type;
+    if (dto.status !== undefined && dto.status !== null)
+      updateData.status = dto.status;
 
-    // Relationship fields
-    if (dto.sprintId !== undefined) updateData.sprint_id = dto.sprintId;
-    if (dto.epicId !== undefined) updateData.epic_id = dto.epicId;
-    if (dto.parentTaskId !== undefined)
+    // Relationship fields - skip if null (not implemented yet)
+    if (dto.sprintId !== undefined && dto.sprintId !== null)
+      updateData.sprint_id = dto.sprintId;
+    if (dto.epicId !== undefined && dto.epicId !== null)
+      updateData.epic_id = dto.epicId;
+    if (dto.parentTaskId !== undefined && dto.parentTaskId !== null)
       updateData.parent_task_id = dto.parentTaskId;
 
-    // Numeric fields
-    if (dto.storyPoints !== undefined)
+    // Numeric fields - skip if null (not implemented yet)
+    if (dto.storyPoints !== undefined && dto.storyPoints !== null)
       updateData.story_points = dto.storyPoints;
-    if (dto.originalEstimateSec !== undefined)
+    if (
+      dto.originalEstimateSec !== undefined &&
+      dto.originalEstimateSec !== null
+    )
       updateData.original_estimate_sec = dto.originalEstimateSec;
-    if (dto.remainingEstimateSec !== undefined)
+    if (
+      dto.remainingEstimateSec !== undefined &&
+      dto.remainingEstimateSec !== null
+    )
       updateData.remaining_estimate_sec = dto.remainingEstimateSec;
 
-    // Calendar sync fields
-    if (dto.calendarReminderEnabled !== undefined)
+    // Calendar sync fields - allow boolean false, skip only if null
+    if (
+      dto.calendarReminderEnabled !== undefined &&
+      dto.calendarReminderEnabled !== null
+    )
       updateData.calendar_reminder_enabled = dto.calendarReminderEnabled;
-    if (dto.calendarReminderTime !== undefined)
+    if (
+      dto.calendarReminderTime !== undefined &&
+      dto.calendarReminderTime !== null
+    )
       updateData.calendar_reminder_time = dto.calendarReminderTime;
 
     console.log(
