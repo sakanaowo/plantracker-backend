@@ -432,6 +432,9 @@ export class TasksService {
       updatedBy?: string;
     },
   ): Promise<tasks> {
+    console.log('\n🔵 [TASK-UPDATE] Starting update for task:', id);
+    console.log('  DTO received:', JSON.stringify(dto, null, 2));
+
     const currentTask = await this.prisma.tasks.findUnique({
       where: { id },
       include: {
@@ -487,10 +490,59 @@ export class TasksService {
     if (dto.calendarReminderTime !== undefined)
       updateData.calendar_reminder_time = dto.calendarReminderTime;
 
+    console.log(
+      '  📝 Update data prepared:',
+      JSON.stringify(updateData, null, 2),
+    );
+
     const updatedTask = await this.prisma.tasks.update({
       where: { id },
       data: updateData,
+      // ✅ Include assignees and labels in response
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
     });
+
+    console.log('  ✅ Task updated successfully');
+    console.log('    - Title:', updatedTask.title);
+    console.log(
+      '    - Description:',
+      updatedTask.description?.substring(0, 50) || 'null',
+    );
+    console.log('    - Priority:', updatedTask.priority);
+    console.log('    - Due At:', updatedTask.due_at);
+    console.log(
+      '    - Calendar Enabled:',
+      updatedTask.calendar_reminder_enabled,
+    );
+    console.log(
+      '    - Assignees count:',
+      updatedTask.task_assignees?.length || 0,
+    );
+    console.log('    - Labels count:', updatedTask.task_labels?.length || 0);
 
     // Log task update
     if (dto.updatedBy) {
@@ -1314,6 +1366,32 @@ export class TasksService {
     const updatedTask = await this.prisma.tasks.update({
       where: { id: taskId },
       data: dataToUpdate,
+      // ✅ Include assignees and labels in response
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     console.log('\n✅ [CALENDAR-SYNC-SERVICE] Update complete!');

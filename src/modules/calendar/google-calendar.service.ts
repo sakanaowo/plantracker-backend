@@ -32,14 +32,25 @@ export class GoogleCalendarService {
    * Format datetime for Google Calendar API
    * Google Calendar requires local datetime WITHOUT timezone suffix (no Z)
    * when using the timeZone field. If dateTime has Z, timeZone is ignored.
+   *
+   * IMPORTANT: Convert UTC to Vietnam timezone (GMT+7) before formatting!
+   * Android sends: "2024-12-04T16:00:00Z" (UTC 16h = VN 23h)
+   * Backend receives: new Date("2024-12-04T16:00:00Z") = UTC 16h
+   * Must convert to VN: UTC 16h + 7h = VN 23h
+   * Then format: "2024-12-04T23:00:00" + timeZone: "Asia/Ho_Chi_Minh" = VN 23h ✅
    */
   private formatLocalDateTime(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
+    // Convert UTC to Vietnam timezone (GMT+7)
+    const vnTime = new Date(
+      date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }),
+    );
+
+    const year = vnTime.getFullYear();
+    const month = String(vnTime.getMonth() + 1).padStart(2, '0');
+    const day = String(vnTime.getDate()).padStart(2, '0');
+    const hours = String(vnTime.getHours()).padStart(2, '0');
+    const minutes = String(vnTime.getMinutes()).padStart(2, '0');
+    const seconds = String(vnTime.getSeconds()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   }
 
