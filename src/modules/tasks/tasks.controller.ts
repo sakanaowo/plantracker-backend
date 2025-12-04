@@ -258,4 +258,26 @@ export class TasksController {
 
     return result;
   }
+
+  // ==================== UNSYNC CALENDAR ====================
+  @Delete(':id/calendar-sync')
+  async unsyncCalendar(
+    @Param('id', new ParseUUIDPipe()) taskId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    console.log('\n🔴 [CALENDAR-UNSYNC-CONTROLLER] Removing calendar sync:');
+    console.log('  User ID:', userId);
+    console.log('  Task ID:', taskId);
+
+    const result = await this.svc.unsyncTaskFromCalendar(userId, taskId);
+
+    console.log('\n✅ [CALENDAR-UNSYNC-CONTROLLER] Calendar event removed');
+    console.log(
+      '  calendar_reminder_enabled:',
+      result.calendar_reminder_enabled,
+    );
+    console.log('  calendar_event_id:', result.calendar_event_id);
+
+    return result;
+  }
 }
