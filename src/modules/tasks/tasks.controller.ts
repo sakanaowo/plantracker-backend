@@ -87,8 +87,11 @@ export class TasksController {
   }
 
   @Get(':id')
-  get(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks | null> {
-    return this.svc.getById(id);
+  get(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks | null> {
+    return this.svc.getById(id, userId);
   }
 
   @Post()
@@ -248,13 +251,11 @@ export class TasksController {
     });
 
     console.log('\n✅ [CALENDAR-SYNC-CONTROLLER] Response:');
+    console.log('  task_calendar_sync_users:', result.task_calendar_sync_users);
     console.log(
-      '  calendar_reminder_enabled:',
-      result.calendar_reminder_enabled,
+      '  User synced:',
+      result.task_calendar_sync_users?.includes(userId),
     );
-    console.log('  calendar_reminder_time:', result.calendar_reminder_time);
-    console.log('  calendar_event_id:', result.calendar_event_id);
-    console.log('  last_synced_at:', result.last_synced_at);
 
     return result;
   }
@@ -271,12 +272,12 @@ export class TasksController {
 
     const result = await this.svc.unsyncTaskFromCalendar(userId, taskId);
 
-    console.log('\n✅ [CALENDAR-UNSYNC-CONTROLLER] Calendar event removed');
+    console.log('\n✅ [CALENDAR-UNSYNC-CONTROLLER] User removed from sync');
+    console.log('  task_calendar_sync_users:', result.task_calendar_sync_users);
     console.log(
-      '  calendar_reminder_enabled:',
-      result.calendar_reminder_enabled,
+      '  Remaining synced users:',
+      result.task_calendar_sync_users?.length,
     );
-    console.log('  calendar_event_id:', result.calendar_event_id);
 
     return result;
   }

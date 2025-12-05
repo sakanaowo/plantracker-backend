@@ -49,12 +49,13 @@ export class TaskCalendarSyncService {
 
     console.log('  Current task state:');
     console.log(
-      '    - calendar_reminder_enabled:',
-      task.calendar_reminder_enabled,
+      '    - task_calendar_sync_users:',
+      task.task_calendar_sync_users,
     );
-    console.log('    - calendar_reminder_time:', task.calendar_reminder_time);
-    console.log('    - calendar_event_id:', task.calendar_event_id);
-    console.log('    - last_synced_at:', task.last_synced_at);
+    console.log(
+      '    - User synced:',
+      task.task_calendar_sync_users?.includes(userId),
+    );
 
     // Check if user has Google Calendar connected
     const integration = await this.prisma.integration_tokens.findFirst({
@@ -87,71 +88,49 @@ export class TaskCalendarSyncService {
       hasCalendarIntegration &&
       updateData.calendarReminderEnabled !== undefined
     ) {
-      dataToUpdate.calendar_reminder_enabled =
-        updateData.calendarReminderEnabled;
-
-      if (updateData.calendarReminderTime !== undefined) {
-        dataToUpdate.calendar_reminder_time = updateData.calendarReminderTime;
-      }
-
       const taskTitle = updateData.title || task.title;
       const taskDueAt = updateData.dueAt || task.due_at;
-      const reminderTime =
-        updateData.calendarReminderTime || task.calendar_reminder_time || 30;
+      const reminderTime = updateData.calendarReminderTime || 30;
 
       if (updateData.calendarReminderEnabled && taskDueAt) {
         console.log('  📅 Syncing to Google Calendar...');
-        if (task.calendar_event_id) {
-          console.log('    → Updating existing event:', task.calendar_event_id);
-          // Update existing calendar event
-          const success =
-            await this.googleCalendarService.updateTaskReminderEvent(
-              userId,
-              task.calendar_event_id,
-              taskTitle,
-              taskDueAt,
-              reminderTime,
-            );
 
-          if (success) {
-            dataToUpdate.last_synced_at = new Date();
-            console.log('    ✅ Event updated successfully');
-          } else {
-            console.log('    ❌ Event update failed');
-          }
+        console.log('    → Creating new calendar event');
+        // Create new calendar event for this user
+        const calendarEventId =
+          await this.googleCalendarService.createTaskReminderEvent(
+            userId,
+            taskId,
+            taskTitle,
+            taskDueAt,
+            reminderTime,
+          );
+
+        if (calendarEventId) {
+          console.log('    ✅ Event created:', calendarEventId);
         } else {
-          console.log('    → Creating new calendar event');
-          // Create new calendar event
-          const calendarEventId =
-            await this.googleCalendarService.createTaskReminderEvent(
-              userId,
-              taskId,
-              taskTitle,
-              taskDueAt,
-              reminderTime,
-            );
-
-          if (calendarEventId) {
-            dataToUpdate.calendar_event_id = calendarEventId;
-            dataToUpdate.last_synced_at = new Date();
-            console.log('    ✅ Event created:', calendarEventId);
-          } else {
-            console.log('    ❌ Event creation failed');
-          }
+          console.log('    ❌ Event creation failed');
         }
-      } else if (
-        !updateData.calendarReminderEnabled &&
-        task.calendar_event_id
-      ) {
-        console.log('  🗑️  Removing from Google Calendar...');
-        console.log('    → Deleting event:', task.calendar_event_id);
-        // Remove from calendar
-        await this.googleCalendarService.deleteTaskReminderEvent(
-          userId,
-          task.calendar_event_id,
+
+        // ✅ Add userId to task_calendar_sync_users array
+        const currentSyncUsers = task.task_calendar_sync_users || [];
+        if (!currentSyncUsers.includes(userId)) {
+          dataToUpdate.task_calendar_sync_users = [...currentSyncUsers, userId];
+          console.log('    ✅ Added user to sync list:', userId);
+        }
+      } else if (!updateData.calendarReminderEnabled) {
+        console.log('  🗑️  Removing user from calendar sync...');
+
+        // Delete user's calendar event (each user has their own)
+        // TODO: Store per-user event IDs to delete specific events
+        console.log('    → User event removal (future: per-user event ID)');
+
+        // ✅ Remove userId from task_calendar_sync_users array
+        const currentSyncUsers = task.task_calendar_sync_users || [];
+        dataToUpdate.task_calendar_sync_users = currentSyncUsers.filter(
+          (id) => id !== userId,
         );
-        dataToUpdate.calendar_event_id = null;
-        console.log('    ✅ Event deleted');
+        console.log('    ✅ Removed user from sync list:', userId);
       }
     }
 
@@ -193,15 +172,13 @@ export class TaskCalendarSyncService {
     console.log('\n✅ [CALENDAR-SYNC-SERVICE] Update complete!');
     console.log('  Final state:');
     console.log(
-      '    - calendar_reminder_enabled:',
-      updatedTask.calendar_reminder_enabled,
+      '    - task_calendar_sync_users:',
+      updatedTask.task_calendar_sync_users,
     );
     console.log(
-      '    - calendar_reminder_time:',
-      updatedTask.calendar_reminder_time,
+      '    - User synced:',
+      updatedTask.task_calendar_sync_users?.includes(userId),
     );
-    console.log('    - calendar_event_id:', updatedTask.calendar_event_id);
-    console.log('    - last_synced_at:', updatedTask.last_synced_at);
 
     return updatedTask;
   }
@@ -223,28 +200,31 @@ export class TaskCalendarSyncService {
       throw new NotFoundException(`Task with ID ${taskId} not found`);
     }
 
-    console.log('  Current calendar_event_id:', task.calendar_event_id);
+    console.log('  Current sync users:', task.task_calendar_sync_users);
 
-    // Delete from Google Calendar if event exists
-    if (task.calendar_event_id) {
-      console.log('  🗑️  Deleting calendar event:', task.calendar_event_id);
-      await this.googleCalendarService.deleteTaskReminderEvent(
-        userId,
-        task.calendar_event_id,
+    // Delete from Google Calendar if user has synced
+    // TODO: Store per-user event IDs to delete specific events
+    const isUserSynced = task.task_calendar_sync_users?.includes(userId);
+
+    if (isUserSynced) {
+      console.log(
+        '  🗑️  Removing user calendar event (future: per-user event ID)',
       );
-      console.log('  ✅ Calendar event deleted');
     } else {
-      console.log('  ℹ️  No calendar event to delete');
+      console.log('  ℹ️  User has not synced this task');
     }
 
-    // Update task to remove calendar sync
+    // ✅ Remove userId from task_calendar_sync_users array
+    const currentSyncUsers = task.task_calendar_sync_users || [];
+    const updatedSyncUsers = currentSyncUsers.filter((id) => id !== userId);
+    console.log('  ✅ Removed user from sync list:', userId);
+    console.log('  Remaining synced users:', updatedSyncUsers.length);
+
+    // Update task to remove user from sync list
     const updatedTask = await this.prisma.tasks.update({
       where: { id: taskId },
       data: {
-        calendar_reminder_enabled: false,
-        calendar_event_id: null,
-        calendar_reminder_time: null,
-        last_synced_at: null,
+        task_calendar_sync_users: updatedSyncUsers,
       },
       include: {
         task_assignees: {
@@ -275,10 +255,13 @@ export class TaskCalendarSyncService {
 
     console.log('\n✅ [CALENDAR-UNSYNC-SERVICE] Task unsynced successfully!');
     console.log(
-      '  calendar_reminder_enabled:',
-      updatedTask.calendar_reminder_enabled,
+      '  task_calendar_sync_users:',
+      updatedTask.task_calendar_sync_users,
     );
-    console.log('  calendar_event_id:', updatedTask.calendar_event_id);
+    console.log(
+      '  Remaining synced users:',
+      updatedTask.task_calendar_sync_users?.length,
+    );
 
     return updatedTask;
   }

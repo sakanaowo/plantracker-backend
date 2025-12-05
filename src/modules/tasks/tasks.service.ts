@@ -222,8 +222,8 @@ export class TasksService {
     };
   }
 
-  getById(id: string): Promise<tasks | null> {
-    return this.prisma.tasks.findFirst({
+  async getById(id: string, userId?: string): Promise<tasks | null> {
+    const task = await this.prisma.tasks.findFirst({
       where: { id },
       include: {
         task_assignees: {
@@ -257,6 +257,16 @@ export class TasksService {
         },
       },
     });
+
+    // ✅ Check if current user has synced this task to their calendar
+    if (task && userId) {
+      const isUserSynced =
+        task.task_calendar_sync_users?.includes(userId) || false;
+      // Override calendar_reminder_enabled to show per-user sync status
+      (task as any).calendar_reminder_enabled = isUserSynced;
+    }
+
+    return task;
   }
 
   async create(dto: {
@@ -511,17 +521,9 @@ export class TasksService {
     )
       updateData.remaining_estimate_sec = dto.remainingEstimateSec;
 
-    // Calendar sync fields - allow boolean false, skip only if null
-    if (
-      dto.calendarReminderEnabled !== undefined &&
-      dto.calendarReminderEnabled !== null
-    )
-      updateData.calendar_reminder_enabled = dto.calendarReminderEnabled;
-    if (
-      dto.calendarReminderTime !== undefined &&
-      dto.calendarReminderTime !== null
-    )
-      updateData.calendar_reminder_time = dto.calendarReminderTime;
+    // ❌ Calendar sync fields removed - use dedicated calendar-sync endpoint instead
+    // Calendar sync is now per-user via task_calendar_sync_users array
+    // Use PUT /tasks/:id/calendar-sync endpoint to enable/disable sync
 
     console.log(
       '  📝 Update data prepared:',
@@ -568,8 +570,8 @@ export class TasksService {
     console.log('    - Priority:', updatedTask.priority);
     console.log('    - Due At:', updatedTask.due_at);
     console.log(
-      '    - Calendar Enabled:',
-      updatedTask.calendar_reminder_enabled,
+      '    - Calendar Synced Users:',
+      updatedTask.task_calendar_sync_users?.length || 0,
     );
     console.log(
       '    - Assignees count:',
