@@ -228,14 +228,12 @@ export class EventsService {
   }
 
   /**
-   * Get events for project with filter
+   * Get events for project (shows ACTIVE and CANCELLED by default)
    */
   async getProjectEvents(
     projectId: string,
-    filter?: 'UPCOMING' | 'PAST' | 'RECURRING',
     status?: 'ACTIVE' | 'CANCELLED' | 'ALL',
   ) {
-    const now = new Date();
     const where: any = { project_id: projectId };
 
     // Status filter: Default shows ACTIVE and CANCELLED (exclude COMPLETED)
@@ -246,15 +244,6 @@ export class EventsService {
     } else {
       // Default: Show ACTIVE and CANCELLED events
       where.status = { in: ['ACTIVE', 'CANCELLED'] };
-    }
-
-    // Time-based filters
-    if (filter === 'UPCOMING') {
-      where.start_at = { gte: now };
-    } else if (filter === 'PAST') {
-      where.start_at = { lt: now };
-    } else if (filter === 'RECURRING') {
-      where.event_type = { not: 'NONE' };
     }
 
     return this.prisma.events.findMany({
@@ -282,7 +271,7 @@ export class EventsService {
         },
       },
       orderBy: {
-        start_at: filter === 'UPCOMING' ? 'asc' : 'desc', // Default when no filter: newest first (desc)
+        start_at: 'desc', // Newest first
       },
     });
   }
@@ -612,6 +601,85 @@ export class EventsService {
 
     this.logger.log(`Deleted project event: ${event.title}`);
     return { success: true };
+  }
+
+  /**
+   * Soft delete project event (cancel instead of hard delete)
+   */
+  async softDeleteProjectEvent(userId: string, eventId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        projects: true,
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // Use cancelEvent logic
+    return this.cancelEvent(event.project_id, eventId, userId, {
+      reason: 'Event deleted by user',
+    });
+  }
+
+  /**
+   * Permanently delete project event (hard delete for UI)
+   */
+  async permanentDeleteProjectEvent(userId: string, eventId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        projects: true,
+        external_event_map: {
+          where: { provider: 'GOOGLE_CALENDAR' },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Event with ID ${eventId} not found`);
+    }
+
+    // Delete from Google Calendar if exists
+    const mapping = event.external_event_map[0];
+    if (mapping?.provider_event_id) {
+      try {
+        await this.googleCalendarService.deleteProjectEventInGoogle(
+          userId,
+          mapping.provider_event_id,
+        );
+        this.logger.log(`✅ Deleted event from Google Calendar`);
+      } catch (error) {
+        this.logger.error(
+          `❌ Failed to delete from Google Calendar: ${error.message}`,
+        );
+      }
+    }
+
+    // Log activity before deletion
+    try {
+      await this.activityLogsService.logEventDeleted({
+        workspaceId: event.projects.workspace_id,
+        projectId: event.project_id,
+        eventId: event.id,
+        userId,
+        eventTitle: event.title,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to log deletion: ${error.message}`);
+    }
+
+    // Delete from database (cascade will handle participants and mappings)
+    await this.prisma.events.delete({
+      where: { id: eventId },
+    });
+
+    this.logger.log(
+      `Permanently deleted event: ${event.title} by user ${userId}`,
+    );
+    return { success: true, message: 'Event permanently deleted' };
   }
 
   /**
