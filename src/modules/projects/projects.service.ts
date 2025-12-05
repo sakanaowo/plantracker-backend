@@ -727,4 +727,173 @@ export class ProjectsService {
       throw new BadRequestException('Failed to delete project');
     }
   }
+
+  /**
+   * Get calendar data for a project (tasks and events for a specific month)
+   * Returns all tasks/events in the month + list of dates that have items
+   */
+  async getCalendarData(projectId: string, month: string, userId: string) {
+    console.log(`📅 getCalendarData - project: ${projectId}, month: ${month}`);
+
+    // Verify user has access to project
+    const hasAccess = await this.checkUserAccess(projectId, userId);
+    if (!hasAccess) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
+
+    // Parse month (format: YYYY-MM)
+    const [year, monthNum] = month.split('-').map(Number);
+    const startDate = new Date(year, monthNum - 1, 1); // First day of month
+    const endDate = new Date(year, monthNum, 0, 23, 59, 59); // Last day of month
+
+    console.log(
+      `  Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`,
+    );
+
+    // Fetch tasks with due_at in this month
+    const tasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+        due_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ due_at: 'asc' }, { priority: 'desc' }],
+    });
+
+    // Fetch events with start_at in this month
+    const events = await this.prisma.events.findMany({
+      where: {
+        project_id: projectId,
+        start_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        users: {
+          select: {
+            id: true,
+            name: true,
+            avatar_url: true,
+          },
+        },
+      },
+      orderBy: { start_at: 'asc' },
+    });
+
+    // Extract unique dates that have tasks or events
+    const datesWithItems = new Set<string>();
+
+    tasks.forEach((task) => {
+      if (task.due_at) {
+        const dateStr = task.due_at.toISOString().split('T')[0]; // YYYY-MM-DD
+        datesWithItems.add(dateStr);
+      }
+    });
+
+    events.forEach((event) => {
+      if (event.start_at) {
+        const dateStr = event.start_at.toISOString().split('T')[0];
+        datesWithItems.add(dateStr);
+      }
+    });
+
+    console.log(`  ✅ Found ${tasks.length} tasks, ${events.length} events`);
+    console.log(`  ✅ Dates with items: ${datesWithItems.size}`);
+
+    return {
+      tasks,
+      events,
+      datesWithItems: Array.from(datesWithItems).sort(),
+      month,
+      summary: {
+        totalTasks: tasks.length,
+        totalEvents: events.length,
+        datesWithItems: datesWithItems.size,
+      },
+    };
+  }
+
+  /**
+   * Check if user has access to a project
+   */
+  private async checkUserAccess(
+    projectId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      include: {
+        workspaces: {
+          select: {
+            owner_id: true,
+          },
+        },
+        project_members: {
+          where: {
+            user_id: userId,
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      return false;
+    }
+
+    // User is workspace owner OR project member
+    return (
+      project.workspaces.owner_id === userId ||
+      project.project_members.length > 0
+    );
+  }
 }

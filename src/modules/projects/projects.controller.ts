@@ -64,6 +64,15 @@ export class ProjectsController {
     return this.svc.getProjectSummary(projectId, userId);
   }
 
+  @Get(':id/calendar-data')
+  getCalendarData(
+    @Param('id') projectId: string,
+    @Query('month') month: string, // Format: YYYY-MM
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.svc.getCalendarData(projectId, month, userId);
+  }
+
   @Delete(':id')
   delete(@Param('id') projectId: string, @CurrentUser('id') userId: string) {
     return this.svc.deleteProject(projectId, userId);
