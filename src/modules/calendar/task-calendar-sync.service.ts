@@ -75,11 +75,11 @@ export class TaskCalendarSyncService {
     // Prepare update data
     const dataToUpdate: any = {};
 
-    if (updateData.title !== undefined) {
+    if (updateData.title !== undefined && updateData.title !== null) {
       dataToUpdate.title = updateData.title;
     }
 
-    if (updateData.dueAt !== undefined) {
+    if (updateData.dueAt !== undefined && updateData.dueAt !== null) {
       dataToUpdate.due_at = updateData.dueAt;
     }
 

@@ -54,27 +54,11 @@ export class UsersService {
           },
         });
       } else {
-        // Check if orphan record exists with same email (old UID)
-        // TODO: remove this logic after test
-        const orphanUser = await this.prisma.users.findUnique({
-          where: { email },
-        });
-
-        if (orphanUser) {
-          console.log(
-            `[ensureFromFirebase] Found orphan record with email ${email}, updating UID from ${orphanUser.id} to ${uid}`,
-          );
-          // Delete orphan and create new record with correct UID
-          await this.prisma.users.delete({
-            where: { id: orphanUser.id },
-          });
-        }
-
         // New user, create with Firebase UID as id
         console.log('[ensureFromFirebase] Creating new user');
         user = await this.prisma.users.create({
           data: {
-            id: uid, // ✅ Use Firebase UID as primary key
+            id: uid,
             email,
             name: name ?? email.split('@')[0],
             avatar_url: avatarUrl ?? null,
