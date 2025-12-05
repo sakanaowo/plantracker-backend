@@ -1,9 +1,18 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { participant_status } from '@prisma/client';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { CancelEventDto } from './dto/cancel-event.dto';
+import { CreateEventDto } from './dto/create-event.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 
 @Injectable()
 export class EventsService {
@@ -16,7 +25,7 @@ export class EventsService {
     private readonly activityLogsService: ActivityLogsService,
   ) {}
 
-  async create(createEventDto: any, userId: string) {
+  async create(createEventDto: CreateEventDto, userId: string) {
     const event = await this.prisma.events.create({
       data: {
         project_id: createEventDto.projectId,
@@ -46,7 +55,7 @@ export class EventsService {
         eventId: event.id,
         userId: userId,
         eventTitle: event.title,
-        eventType: createEventDto.type || 'MEETING',
+        eventType: 'MEETING', // Default to MEETING for simple events
         startAt: event.start_at,
         endAt: event.end_at,
       });
@@ -58,9 +67,18 @@ export class EventsService {
     return event;
   }
 
-  async findAll(projectId: string) {
+  async findAll(projectId: string, status?: 'ACTIVE' | 'CANCELLED' | 'ALL') {
+    const where: any = { project_id: projectId };
+
+    // Default: only show active events
+    if (status && status !== 'ALL') {
+      where.status = status;
+    } else if (!status) {
+      where.status = 'ACTIVE';
+    }
+
     return this.prisma.events.findMany({
-      where: { project_id: projectId },
+      where,
       include: {
         participants: true,
         users: {
@@ -71,8 +89,11 @@ export class EventsService {
     });
   }
 
-  async findByProject(projectId: string) {
-    return this.findAll(projectId);
+  async findByProject(
+    projectId: string,
+    status?: 'ACTIVE' | 'CANCELLED' | 'ALL',
+  ) {
+    return this.findAll(projectId, status);
   }
 
   async findOne(id: string) {
@@ -94,7 +115,7 @@ export class EventsService {
     return event;
   }
 
-  async update(id: string, updateEventDto: any, userId: string) {
+  async update(id: string, updateEventDto: UpdateEventDto, userId: string) {
     const oldEvent = await this.findOne(id);
 
     const updatedEvent = await this.prisma.events.update({
@@ -673,5 +694,279 @@ export class EventsService {
       stats,
       participants: participantsByStatus,
     };
+  }
+
+  /**
+   * Cancel an event (soft delete)
+   */
+  async cancelEvent(
+    projectId: string,
+    eventId: string,
+    userId: string,
+    dto: CancelEventDto,
+  ) {
+    // 1. Check if event exists
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        participants: {
+          include: {
+            users: {
+              select: { id: true, email: true, name: true },
+            },
+          },
+        },
+        projects: true,
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    if (event.project_id !== projectId) {
+      throw new ForbiddenException('Event does not belong to this project');
+    }
+
+    // 2. Check if already cancelled
+    if (event.status === 'CANCELLED') {
+      throw new BadRequestException('Event is already cancelled');
+    }
+
+    // 3. Update event status
+    const updatedEvent = await this.prisma.events.update({
+      where: { id: eventId },
+      data: {
+        status: 'CANCELLED',
+        cancelled_at: new Date(),
+        cancelled_by: userId,
+        cancellation_reason: dto.reason,
+        updated_at: new Date(),
+      },
+      include: {
+        participants: {
+          include: {
+            users: {
+              select: { id: true, email: true, name: true },
+            },
+          },
+        },
+        projects: true,
+      },
+    });
+
+    this.logger.log(`Event cancelled: ${event.title} by user ${userId}`);
+
+    // 4. Create activity log
+    try {
+      await this.activityLogsService.logEventUpdated({
+        workspaceId: event.projects?.workspace_id,
+        projectId: projectId,
+        eventId: eventId,
+        userId: userId,
+        eventTitle: event.title,
+        oldValue: { status: 'ACTIVE' },
+        newValue: {
+          status: 'CANCELLED',
+          reason: dto.reason,
+        },
+      });
+      this.logger.log(`✅ Activity log created for event cancellation`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to create activity log: ${error.message}`);
+    }
+
+    // 5. Send notifications to participants
+    try {
+      const participantIds = event.participants
+        .filter((p) => p.users !== null && p.users.id !== userId)
+        .map((p) => p.users!.id);
+
+      if (participantIds.length > 0) {
+        // TODO: Implement proper event notification method
+        // For now, skip notifications or use existing notification service
+        this.logger.log(
+          `✅ Event cancelled, ${participantIds.length} participants would be notified`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`❌ Failed to send notifications: ${error.message}`);
+    }
+
+    // 6. Delete from Google Calendar if synced
+    try {
+      const externalMapping = await this.prisma.external_event_map.findFirst({
+        where: {
+          event_id: eventId,
+          provider: 'GOOGLE_CALENDAR',
+        },
+      });
+
+      if (externalMapping) {
+        await this.googleCalendarService.deleteProjectEventInGoogle(
+          userId,
+          externalMapping.provider_event_id,
+        );
+        this.logger.log(`✅ Deleted event from Google Calendar`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to delete from Google Calendar: ${error.message}`,
+      );
+    }
+
+    return updatedEvent;
+  }
+
+  /**
+   * Restore a cancelled event
+   */
+  async restoreEvent(projectId: string, eventId: string, userId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      include: {
+        projects: true,
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    if (event.project_id !== projectId) {
+      throw new ForbiddenException('Event does not belong to this project');
+    }
+
+    if (event.status !== 'CANCELLED') {
+      throw new BadRequestException('Event is not cancelled');
+    }
+
+    const restoredEvent = await this.prisma.events.update({
+      where: { id: eventId },
+      data: {
+        status: 'ACTIVE',
+        cancelled_at: null,
+        cancelled_by: null,
+        cancellation_reason: null,
+        updated_at: new Date(),
+      },
+      include: {
+        participants: {
+          include: {
+            users: {
+              select: { id: true, email: true, name: true },
+            },
+          },
+        },
+        projects: true,
+      },
+    });
+
+    this.logger.log(`Event restored: ${event.title} by user ${userId}`);
+
+    // Re-create in Google Calendar if needed
+    try {
+      const attendees = await this.prisma.users.findMany({
+        where: {
+          id: {
+            in: restoredEvent.participants
+              .filter((p) => p.user_id)
+              .map((p) => p.user_id!),
+          },
+        },
+        select: { email: true },
+      });
+
+      const result =
+        await this.googleCalendarService.createProjectEventInGoogle(userId, {
+          title: restoredEvent.title,
+          description: restoredEvent.description || undefined,
+          startAt: restoredEvent.start_at,
+          endAt: restoredEvent.end_at,
+          attendeeEmails: attendees.map((a) => a.email),
+          createMeet: !!restoredEvent.meet_link,
+        });
+
+      // Store new external event mapping
+      if (result.calendarEventId) {
+        await this.prisma.external_event_map.create({
+          data: {
+            event_id: eventId,
+            provider: 'GOOGLE_CALENDAR',
+            provider_event_id: result.calendarEventId,
+            last_synced_at: new Date(),
+          },
+        });
+        this.logger.log(`✅ Re-created event in Google Calendar`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to re-create in Google Calendar: ${error.message}`,
+      );
+    }
+
+    // Create activity log
+    try {
+      await this.activityLogsService.logEventUpdated({
+        workspaceId: event.projects?.workspace_id,
+        projectId: projectId,
+        eventId: eventId,
+        userId: userId,
+        eventTitle: event.title,
+        oldValue: { status: 'CANCELLED' },
+        newValue: { status: 'ACTIVE' },
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to create activity log: ${error.message}`);
+    }
+
+    return restoredEvent;
+  }
+
+  /**
+   * Hard delete an event (permanent)
+   */
+  async hardDeleteEvent(projectId: string, eventId: string, userId: string) {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    if (event.project_id !== projectId) {
+      throw new ForbiddenException('Event does not belong to this project');
+    }
+
+    // Delete from Google Calendar first
+    try {
+      const externalMapping = await this.prisma.external_event_map.findFirst({
+        where: {
+          event_id: eventId,
+          provider: 'GOOGLE_CALENDAR',
+        },
+      });
+
+      if (externalMapping) {
+        await this.googleCalendarService.deleteProjectEventInGoogle(
+          userId,
+          externalMapping.provider_event_id,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to delete from Google Calendar: ${error.message}`,
+      );
+    }
+
+    // Delete event from database
+    await this.prisma.events.delete({
+      where: { id: eventId },
+    });
+
+    this.logger.log(`Event permanently deleted: ${event.title}`);
+
+    return { message: 'Event permanently deleted' };
   }
 }

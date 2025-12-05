@@ -18,6 +18,7 @@ import {
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { CancelEventDto } from './dto/cancel-event.dto';
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
@@ -41,8 +42,11 @@ export class EventsController {
   @Get()
   @ApiOperation({ summary: 'Get events by project' })
   @ApiResponse({ status: 200, description: 'Events retrieved successfully' })
-  findByProject(@Query('projectId') projectId: string) {
-    return this.eventsService.findByProject(projectId);
+  findByProject(
+    @Query('projectId') projectId: string,
+    @Query('status') status?: 'ACTIVE' | 'CANCELLED' | 'ALL',
+  ) {
+    return this.eventsService.findByProject(projectId, status);
   }
 
   @Get(':id')
@@ -188,5 +192,41 @@ export class EventsController {
   @ApiResponse({ status: 200, description: 'Reminder sent successfully' })
   sendReminder(@Param('id') eventId: string) {
     return this.eventsService.sendReminder(eventId);
+  }
+
+  // ==================== CANCEL/RESTORE EVENT ====================
+
+  @Patch('projects/:projectId/events/:eventId/cancel')
+  @ApiOperation({ summary: 'Cancel an event (soft delete)' })
+  @ApiResponse({ status: 200, description: 'Event cancelled successfully' })
+  cancelEvent(
+    @Param('projectId') projectId: string,
+    @Param('eventId') eventId: string,
+    @Body() dto: CancelEventDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.cancelEvent(projectId, eventId, userId, dto);
+  }
+
+  @Patch('projects/:projectId/events/:eventId/restore')
+  @ApiOperation({ summary: 'Restore a cancelled event' })
+  @ApiResponse({ status: 200, description: 'Event restored successfully' })
+  restoreEvent(
+    @Param('projectId') projectId: string,
+    @Param('eventId') eventId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.restoreEvent(projectId, eventId, userId);
+  }
+
+  @Delete('projects/:projectId/events/:eventId/hard-delete')
+  @ApiOperation({ summary: 'Permanently delete an event' })
+  @ApiResponse({ status: 200, description: 'Event permanently deleted' })
+  hardDeleteEvent(
+    @Param('projectId') projectId: string,
+    @Param('eventId') eventId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.hardDeleteEvent(projectId, eventId, userId);
   }
 }
