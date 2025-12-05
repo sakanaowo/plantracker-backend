@@ -233,10 +233,22 @@ export class EventsService {
   async getProjectEvents(
     projectId: string,
     filter?: 'UPCOMING' | 'PAST' | 'RECURRING',
+    status?: 'ACTIVE' | 'CANCELLED' | 'ALL',
   ) {
     const now = new Date();
     const where: any = { project_id: projectId };
 
+    // Status filter: Default shows ACTIVE and CANCELLED (exclude COMPLETED)
+    if (status === 'ALL') {
+      // Show all events including COMPLETED
+    } else if (status === 'ACTIVE' || status === 'CANCELLED') {
+      where.status = status;
+    } else {
+      // Default: Show ACTIVE and CANCELLED events
+      where.status = { in: ['ACTIVE', 'CANCELLED'] };
+    }
+
+    // Time-based filters
     if (filter === 'UPCOMING') {
       where.start_at = { gte: now };
     } else if (filter === 'PAST') {

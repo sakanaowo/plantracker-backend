@@ -127,8 +127,9 @@ export class EventsController {
   getProjectEvents(
     @Param('projectId') projectId: string,
     @Query('filter') filter?: 'UPCOMING' | 'PAST' | 'RECURRING',
+    @Query('status') status?: 'ACTIVE' | 'CANCELLED' | 'ALL',
   ) {
-    return this.eventsService.getProjectEvents(projectId, filter);
+    return this.eventsService.getProjectEvents(projectId, filter, status);
   }
 
   // TODO [TONIGHT]: Test creating event WITH createGoogleMeet=true
