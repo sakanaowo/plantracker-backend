@@ -759,7 +759,17 @@ export class NotificationsService {
     senderName: string;
     message?: string | null;
     recipientIds: string[];
+    projectId?: string; // ✅ Add optional projectId for deep link navigation
   }): Promise<void> {
+    this.logger.log(`🔔 [NOTIFICATION] Starting sendEventReminder`);
+    this.logger.log(`📊 [NOTIFICATION] Input data:`);
+    this.logger.log(`   - Event ID: ${data.eventId}`);
+    this.logger.log(`   - Event Title: ${data.eventTitle}`);
+    this.logger.log(`   - Project ID: ${data.projectId || 'N/A'}`);
+    this.logger.log(`   - Sender: ${data.senderName}`);
+    this.logger.log(`   - Recipients: ${data.recipientIds.length} users`);
+    this.logger.log(`   - Recipient IDs: ${JSON.stringify(data.recipientIds)}`);
+
     try {
       const formattedDate = data.eventStartAt.toLocaleDateString('vi-VN');
       const formattedTime = data.eventStartAt.toLocaleTimeString('vi-VN', {
@@ -767,9 +777,15 @@ export class NotificationsService {
         minute: '2-digit',
       });
 
+      this.logger.log(
+        `⏰ [NOTIFICATION] Formatted time: ${formattedTime}, ${formattedDate}`,
+      );
+
       const body = data.message
         ? `${data.senderName}: ${data.message}`
         : `${data.senderName} nhắc bạn về sự kiện "${data.eventTitle}" lúc ${formattedTime}, ${formattedDate}`;
+
+      this.logger.log(`📝 [NOTIFICATION] Message body: ${body}`);
 
       const notificationPayload = {
         id: crypto.randomUUID(),
@@ -782,14 +798,30 @@ export class NotificationsService {
           eventStartAt: data.eventStartAt.toISOString(),
           senderName: data.senderName,
           message: data.message || '',
+          projectId: data.projectId || '', // ✅ Include projectId for navigation
           deeplink: `/events/${data.eventId}`,
         },
         createdAt: new Date().toISOString(),
       };
 
+      this.logger.log(
+        `📦 [NOTIFICATION] Payload created with ID: ${notificationPayload.id}`,
+      );
+
       // Send to all recipients
+      let wsSuccessCount = 0;
+      let fcmSuccessCount = 0;
+      let dbSuccessCount = 0;
+
       for (const recipientId of data.recipientIds) {
+        this.logger.log(
+          `👤 [NOTIFICATION] Processing recipient: ${recipientId}`,
+        );
+
         // Try WebSocket first
+        this.logger.log(
+          `🔌 [NOTIFICATION] Attempting WebSocket delivery to ${recipientId}...`,
+        );
         const wsSuccess = this.notificationsGateway.emitToUser(
           recipientId,
           'notification',
@@ -797,56 +829,103 @@ export class NotificationsService {
         );
 
         if (wsSuccess) {
+          wsSuccessCount++;
           this.logger.log(
-            `Event reminder sent via WebSocket to ${recipientId}`,
+            `✅ [NOTIFICATION] WebSocket delivery successful to ${recipientId}`,
           );
         } else {
+          this.logger.warn(
+            `⚠️ [NOTIFICATION] WebSocket delivery failed for ${recipientId}, falling back to FCM`,
+          );
+
           // Fallback to FCM
           const devices = await this.prisma.user_devices.findMany({
             where: { user_id: recipientId, is_active: true },
           });
 
-          for (const device of devices) {
-            await this.fcmService.sendNotification({
-              token: device.fcm_token,
-              notification: {
-                title: notificationPayload.title,
-                body: notificationPayload.body,
-              },
-              data: {
-                type: 'event_reminder',
-                eventId: data.eventId,
-                eventTitle: data.eventTitle,
-                clickAction: 'OPEN_EVENT_DETAIL',
-              },
-              android: {
-                priority: 'high',
-                notification: {
-                  channelId: 'event_reminders',
-                  priority: 'high',
-                  defaultSound: true,
-                  defaultVibrateTimings: true,
-                },
-              },
-            });
-          }
+          this.logger.log(
+            `📱 [NOTIFICATION] Found ${devices.length} active devices for user ${recipientId}`,
+          );
 
-          this.logger.log(`Event reminder sent via FCM to ${recipientId}`);
+          for (const device of devices) {
+            this.logger.log(
+              `📲 [NOTIFICATION] Sending FCM to device: ${device.id.substring(0, 8)}...`,
+            );
+
+            try {
+              await this.fcmService.sendNotification({
+                token: device.fcm_token,
+                notification: {
+                  title: notificationPayload.title,
+                  body: notificationPayload.body,
+                },
+                data: {
+                  type: 'event_reminder',
+                  eventId: data.eventId,
+                  eventTitle: data.eventTitle,
+                  projectId: data.projectId || '',
+                  clickAction: 'OPEN_EVENT_DETAIL',
+                },
+                android: {
+                  priority: 'high',
+                  notification: {
+                    channelId: 'event_reminders',
+                    priority: 'high',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                  },
+                },
+              });
+              fcmSuccessCount++;
+              this.logger.log(
+                `✅ [NOTIFICATION] FCM sent successfully to device ${device.id.substring(0, 8)}`,
+              );
+            } catch (fcmError) {
+              this.logger.error(
+                `❌ [NOTIFICATION] FCM failed for device ${device.id}:`,
+                fcmError.message,
+              );
+            }
+          }
         }
 
         // Log to database
-        await this.logNotification({
-          userId: recipientId,
-          type: 'EVENT_REMINDER' as notification_type,
-          message: body,
-        });
+        try {
+          this.logger.log(
+            `💾 [NOTIFICATION] Logging to database for user ${recipientId}...`,
+          );
+          await this.logNotification({
+            userId: recipientId,
+            type: 'EVENT_REMINDER' as notification_type,
+            message: body,
+          });
+          dbSuccessCount++;
+          this.logger.log(
+            `✅ [NOTIFICATION] Database log successful for ${recipientId}`,
+          );
+        } catch (dbError) {
+          this.logger.error(
+            `❌ [NOTIFICATION] Database log failed for ${recipientId}:`,
+            dbError.message,
+          );
+        }
       }
 
+      this.logger.log(`📊 [NOTIFICATION] Summary:`);
+      this.logger.log(`   - Total recipients: ${data.recipientIds.length}`);
+      this.logger.log(`   - WebSocket successful: ${wsSuccessCount}`);
+      this.logger.log(`   - FCM successful: ${fcmSuccessCount}`);
+      this.logger.log(`   - Database logs: ${dbSuccessCount}`);
       this.logger.log(
-        `Event reminder sent to ${data.recipientIds.length} recipients`,
+        `✅ [NOTIFICATION] sendEventReminder completed successfully`,
       );
     } catch (error) {
-      this.logger.error(`Failed to send event reminder:`, error);
+      this.logger.error(
+        `❌ [NOTIFICATION] Failed to send event reminder:`,
+        error,
+      );
+      this.logger.error(`❌ [NOTIFICATION] Error message: ${error.message}`);
+      this.logger.error(`❌ [NOTIFICATION] Error stack: ${error.stack}`);
       throw error;
     }
   }

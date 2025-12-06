@@ -732,6 +732,10 @@ export class EventsService {
    * Send reminder to attendees
    */
   async sendReminder(eventId: string) {
+    this.logger.log(
+      `📬 [REMINDER] Starting sendReminder for eventId: ${eventId}`,
+    );
+
     const event = await this.prisma.events.findUnique({
       where: { id: eventId },
       include: {
@@ -750,23 +754,42 @@ export class EventsService {
     });
 
     if (!event) {
+      this.logger.error(`❌ [REMINDER] Event not found: ${eventId}`);
       throw new NotFoundException(`Event with ID ${eventId} not found`);
     }
 
-    this.logger.log(`📧 Sending reminder for event: ${event.title}`);
+    this.logger.log(`📧 [REMINDER] Event found: "${event.title}"`);
+    this.logger.log(`📊 [REMINDER] Event details:`);
+    this.logger.log(`   - ID: ${event.id}`);
+    this.logger.log(`   - Title: ${event.title}`);
+    this.logger.log(`   - Project ID: ${event.project_id}`);
+    this.logger.log(`   - Project Name: ${event.projects?.name || 'N/A'}`);
+    this.logger.log(`   - Start: ${event.start_at}`);
+    this.logger.log(`   - Total participants: ${event.participants.length}`);
 
     // Get attendee user IDs (exclude null users - external participants)
     const attendeeIds = event.participants
       .filter((p) => p.user_id !== null)
       .map((p) => p.user_id!); // Use non-null assertion since we filtered nulls
 
+    this.logger.log(
+      `👥 [REMINDER] Filtered attendees (registered users only): ${attendeeIds.length}`,
+    );
+    this.logger.log(
+      `📋 [REMINDER] Attendee IDs: ${JSON.stringify(attendeeIds)}`,
+    );
+
     if (attendeeIds.length === 0) {
-      this.logger.warn('⚠️ No registered users to send reminder to');
+      this.logger.warn('⚠️ [REMINDER] No registered users to send reminder to');
       return { success: true, sent: 0 };
     }
 
     // Send EVENT_REMINDER notification to all attendees
     try {
+      this.logger.log(
+        `🚀 [REMINDER] Calling NotificationsService.sendEventReminder...`,
+      );
+
       await this.notificationsService.sendEventReminder({
         eventId: event.id,
         eventTitle: event.title,
@@ -774,15 +797,18 @@ export class EventsService {
         senderName: 'System', // Automated reminder from system
         message: `Sự kiện "${event.title}" sẽ diễn ra sớm`,
         recipientIds: attendeeIds,
+        projectId: event.project_id, // ✅ Add projectId for deep link navigation
       });
 
       this.logger.log(
-        `✅ Event reminder sent to ${attendeeIds.length} attendees`,
+        `✅ [REMINDER] Event reminder sent successfully to ${attendeeIds.length} attendees`,
       );
 
       return { success: true, sent: attendeeIds.length };
     } catch (error) {
-      this.logger.error('❌ Failed to send event reminder:', error);
+      this.logger.error(`❌ [REMINDER] Failed to send event reminder:`, error);
+      this.logger.error(`❌ [REMINDER] Error details: ${error.message}`);
+      this.logger.error(`❌ [REMINDER] Error stack: ${error.stack}`);
       throw error;
     }
   }

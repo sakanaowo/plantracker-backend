@@ -40,15 +40,32 @@ export class FcmService implements OnModuleInit {
         },
   ): Promise<string> {
     try {
+      this.logger.log(`🔔 [FCM] Starting sendNotification`);
+
       // If message contains userId, fetch FCM token first
       if ('userId' in message) {
+        this.logger.log(`👤 [FCM] Sending to userId: ${message.userId}`);
+        this.logger.log(
+          `📝 [FCM] Notification title: ${message.notification.title}`,
+        );
+        this.logger.log(
+          `📄 [FCM] Notification body: ${message.notification.body}`,
+        );
+        this.logger.log(
+          `📦 [FCM] Data payload: ${JSON.stringify(message.data)}`,
+        );
+
         const user = await this.getUserFcmToken(message.userId);
         if (!user?.fcmToken) {
           this.logger.warn(
-            `User ${message.userId} does not have FCM token registered`,
+            `⚠️ [FCM] User ${message.userId} does not have FCM token registered`,
           );
           return 'NO_FCM_TOKEN';
         }
+
+        this.logger.log(
+          `🔑 [FCM] FCM token found: ${user.fcmToken.substring(0, 20)}...`,
+        );
 
         const fcmMessage: Message = {
           token: user.fcmToken,
@@ -63,17 +80,30 @@ export class FcmService implements OnModuleInit {
           },
         };
 
+        this.logger.log(`🚀 [FCM] Sending message via Firebase Admin SDK...`);
         const response = await admin.messaging().send(fcmMessage);
-        this.logger.log(`Successfully sent notification: ${response}`);
+        this.logger.log(`✅ [FCM] Successfully sent notification: ${response}`);
         return response;
       }
 
       // Standard Message object
+      this.logger.log(`📨 [FCM] Sending standard Message object`);
+      if ('token' in message && message.token) {
+        this.logger.log(`🔑 [FCM] Token: ${message.token.substring(0, 20)}...`);
+      }
+
       const response = await admin.messaging().send(message);
-      this.logger.log(`Successfully sent notification: ${response}`);
+      this.logger.log(`✅ [FCM] Successfully sent notification: ${response}`);
       return response;
     } catch (error) {
-      this.logger.error('Error sending notification', error);
+      this.logger.error(`❌ [FCM] Error sending notification:`, error);
+      this.logger.error(`❌ [FCM] Error message: ${error.message}`);
+      this.logger.error(`❌ [FCM] Error code: ${error.code || 'N/A'}`);
+      if (error.errorInfo) {
+        this.logger.error(
+          `❌ [FCM] Error info: ${JSON.stringify(error.errorInfo)}`,
+        );
+      }
       throw error;
     }
   }
