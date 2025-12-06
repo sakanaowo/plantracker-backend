@@ -758,7 +758,7 @@ export class EventsService {
     // Get attendee user IDs (exclude null users - external participants)
     const attendeeIds = event.participants
       .filter((p) => p.user_id !== null)
-      .map((p) => p.user_id);
+      .map((p) => p.user_id!); // Use non-null assertion since we filtered nulls
 
     if (attendeeIds.length === 0) {
       this.logger.warn('⚠️ No registered users to send reminder to');
@@ -770,13 +770,10 @@ export class EventsService {
       await this.notificationsService.sendEventReminder({
         eventId: event.id,
         eventTitle: event.title,
-        eventDescription: event.description || undefined,
-        startTime: event.start_at,
-        endTime: event.end_at,
-        location: event.meet_link || undefined,
-        projectId: event.project_id,
-        projectName: event.projects?.name,
-        attendeeIds,
+        eventStartAt: event.start_at,
+        senderName: 'System', // Automated reminder from system
+        message: `Sự kiện "${event.title}" sẽ diễn ra sớm`,
+        recipientIds: attendeeIds,
       });
 
       this.logger.log(
