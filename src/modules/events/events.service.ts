@@ -308,10 +308,10 @@ export class EventsService {
       createGoogleMeet: boolean;
     },
   ) {
-    // ✅ Auto-add event creator to attendees if not already included
-    const allAttendeeIds = dto.attendeeIds.includes(userId)
-      ? dto.attendeeIds
-      : [...dto.attendeeIds, userId];
+    // ✅ Auto-add event creator to attendees if not already included (use Set to prevent duplicates)
+    const attendeeIdsSet = new Set(dto.attendeeIds);
+    attendeeIdsSet.add(userId); // Add creator
+    const allAttendeeIds = Array.from(attendeeIdsSet);
 
     // Get attendee emails
     const attendees = await this.prisma.users.findMany({
