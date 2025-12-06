@@ -2,23 +2,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google, calendar_v3 } from 'googleapis';
 import { PrismaService } from '../../prisma/prisma.service';
 
-/**
- * TODO [TONIGHT TESTING]:
- * 1. Test OAuth flow with real Google account
- * 2. Test calendar event creation/update/delete
- * 3. Test Google Meet link generation
- * 4. Test token refresh when expired
- * 5. Verify calendar sync works end-to-end with FE
- *
- * IMPORTANT: Current tests use MOCK OAuth - real API needs to be tested!
- */
 @Injectable()
 export class GoogleCalendarService {
   private readonly logger = new Logger(GoogleCalendarService.name);
@@ -54,7 +43,6 @@ export class GoogleCalendarService {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   }
 
-  // TODO [TONIGHT]: Test with real Google OAuth - get actual auth URL
   async getAuthUrl(userId: string): Promise<string> {
     const oauth2Client = this.createOAuth2Client();
 
@@ -388,10 +376,6 @@ export class GoogleCalendarService {
 
   /**
    * Create task reminder event in Google Calendar
-   * TODO [TONIGHT]: Test creating real task reminder in Google Calendar
-   * - Check event appears in user's calendar
-   * - Verify 15-minute duration and red color
-   * - Test with different reminderMinutes (15, 30, 60)
    */
   async createTaskReminderEvent(
     userId: string,
@@ -400,31 +384,17 @@ export class GoogleCalendarService {
     dueDate: Date,
     reminderMinutes: number,
   ): Promise<string | null> {
-    console.log('\n🟡 [CALENDAR-SERVICE] createTaskReminderEvent called');
-    console.log('  User ID:', userId);
-    console.log('  Task ID:', taskId);
-    console.log('  Title:', title);
-    console.log('  Due Date:', dueDate);
-    console.log('  Reminder Minutes:', reminderMinutes);
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
-      console.log(
-        '❌ [CALENDAR-SERVICE] No calendar client - user not connected',
-      );
       this.logger.warn(`No calendar client for user ${userId}`);
       return null;
     }
-
-    console.log('✅ [CALENDAR-SERVICE] Calendar client obtained');
 
     try {
       const reminderTime = new Date(
         dueDate.getTime() - reminderMinutes * 60000,
       );
       const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
-
-      console.log('  Creating event at:', reminderTime);
 
       const googleEvent: calendar_v3.Schema$Event = (
         await calendar.events.insert({
@@ -452,14 +422,9 @@ export class GoogleCalendarService {
         })
       ).data;
 
-      console.log('✅ [CALENDAR-SERVICE] Event created successfully!');
-      console.log('  Event ID:', googleEvent.id);
       this.logger.log(`Created task reminder event: ${googleEvent.id}`);
       return googleEvent.id || null;
     } catch (error) {
-      console.log('❌ [CALENDAR-SERVICE] Failed to create event');
-      console.log('  Error:', error.message);
-      console.log('  Full error:', error);
       this.logger.error(`Failed to create task reminder: ${error.message}`);
       return null;
     }
@@ -540,11 +505,6 @@ export class GoogleCalendarService {
 
   /**
    * Create project event with optional Google Meet link
-   * TODO [TONIGHT]: Test creating project event with real Google Meet
-   * - Verify Google Meet link is generated correctly
-   * - Check attendees receive calendar invites
-   * - Test event appears in all attendees' calendars
-   * - Verify event details (title, description, time, duration)
    */
   async createProjectEventInGoogle(
     userId: string,
@@ -620,7 +580,7 @@ export class GoogleCalendarService {
         meetLink: meetLink || null,
       };
     } catch (error) {
-      this.logger.error(`Failed to create project event: ${error.message}`);
+      this.logger.warn(`Failed to create project event: ${error.message}`);
       return { calendarEventId: null, meetLink: null };
     }
   }

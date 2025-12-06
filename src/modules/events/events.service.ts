@@ -312,7 +312,14 @@ export class EventsService {
     let meetLink: string | null = null;
 
     try {
-      const startAt = new Date(`${dto.date}T${dto.time}:00`);
+      // Parse datetime with timezone from FE (e.g., "2025-12-06T01:00:00+07:00")
+      // If FE doesn't send timezone, default to Vietnam time (+07:00)
+      const startAtStr = `${dto.date}T${dto.time}:00`;
+      const hasTimezone =
+        startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
+      const startAt = new Date(
+        hasTimezone ? startAtStr : `${startAtStr}+07:00`,
+      );
       const endAt = new Date(startAt.getTime() + dto.duration * 60000);
 
       const result =
@@ -333,7 +340,12 @@ export class EventsService {
     }
 
     // Create in database
-    const startAt = new Date(`${dto.date}T${dto.time}:00`);
+    // Parse datetime with timezone from FE (e.g., "2025-12-06T01:00:00+07:00")
+    // If FE doesn't send timezone, default to Vietnam time (+07:00)
+    const startAtStr = `${dto.date}T${dto.time}:00`;
+    const hasTimezone =
+      startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
+    const startAt = new Date(hasTimezone ? startAtStr : `${startAtStr}+07:00`);
     const endAt = new Date(startAt.getTime() + dto.duration * 60000);
 
     const event = await this.prisma.events.create({
@@ -476,7 +488,11 @@ export class EventsService {
         let endAt: Date | undefined;
 
         if (dto.date && dto.time) {
-          startAt = new Date(`${dto.date}T${dto.time}:00`);
+          // Parse datetime with timezone from FE or default to Vietnam (+07:00)
+          const startAtStr = `${dto.date}T${dto.time}:00`;
+          const hasTimezone =
+            startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
+          startAt = new Date(hasTimezone ? startAtStr : `${startAtStr}+07:00`);
           endAt = new Date(startAt.getTime() + (dto.duration || 60) * 60000);
         }
 
@@ -508,7 +524,13 @@ export class EventsService {
     if (dto.title) updateData.title = dto.title;
     if (dto.description) updateData.description = dto.description;
     if (dto.date && dto.time) {
-      const startAt = new Date(`${dto.date}T${dto.time}:00`);
+      // Parse datetime with timezone from FE or default to Vietnam (+07:00)
+      const startAtStr = `${dto.date}T${dto.time}:00`;
+      const hasTimezone =
+        startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
+      const startAt = new Date(
+        hasTimezone ? startAtStr : `${startAtStr}+07:00`,
+      );
       updateData.start_at = startAt;
       updateData.end_at = new Date(
         startAt.getTime() + (dto.duration || 60) * 60000,

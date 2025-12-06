@@ -57,7 +57,6 @@ export class MeetingSchedulerController {
       'Returns list of project members and their calendar sync status',
   })
   getProjectMembersWithCalendarStatus(@Param('projectId') _projectId: string) {
-    // TODO: Implement this endpoint
     return {
       message:
         'To be implemented - returns project members with calendar status',
