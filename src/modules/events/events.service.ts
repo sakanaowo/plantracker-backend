@@ -740,6 +740,12 @@ export class EventsService {
             users: true,
           },
         },
+        projects: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -747,10 +753,41 @@ export class EventsService {
       throw new NotFoundException(`Event with ID ${eventId} not found`);
     }
 
-    // TODO: Integrate with notification system to send reminders
-    this.logger.log(`Sending reminder for event: ${event.title}`);
+    this.logger.log(`📧 Sending reminder for event: ${event.title}`);
 
-    return { success: true };
+    // Get attendee user IDs (exclude null users - external participants)
+    const attendeeIds = event.participants
+      .filter((p) => p.user_id !== null)
+      .map((p) => p.user_id);
+
+    if (attendeeIds.length === 0) {
+      this.logger.warn('⚠️ No registered users to send reminder to');
+      return { success: true, sent: 0 };
+    }
+
+    // Send EVENT_REMINDER notification to all attendees
+    try {
+      await this.notificationsService.sendEventReminder({
+        eventId: event.id,
+        eventTitle: event.title,
+        eventDescription: event.description || undefined,
+        startTime: event.start_at,
+        endTime: event.end_at,
+        location: event.meet_link || undefined,
+        projectId: event.project_id,
+        projectName: event.projects?.name,
+        attendeeIds,
+      });
+
+      this.logger.log(
+        `✅ Event reminder sent to ${attendeeIds.length} attendees`,
+      );
+
+      return { success: true, sent: attendeeIds.length };
+    } catch (error) {
+      this.logger.error('❌ Failed to send event reminder:', error);
+      throw error;
+    }
   }
 
   /**
