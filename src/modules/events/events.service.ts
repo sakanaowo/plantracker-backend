@@ -445,6 +445,10 @@ export class EventsService {
       // ✅ Only send invites to attendees who are not the creator
       const inviteeIds = allAttendeeIds.filter((id) => id !== userId);
 
+      this.logger.log(
+        `📧 Event attendees: total=${allAttendeeIds.length}, invitees=${inviteeIds.length}, creator=${userId}`,
+      );
+
       if (inviteeIds.length > 0) {
         await this.notificationsService.sendEventInvite({
           eventId: event.id,
