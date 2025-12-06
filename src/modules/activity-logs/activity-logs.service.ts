@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { activity_action, entity_type, Prisma } from '@prisma/client';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 interface BaseLogParams {
   workspaceId?: string;
@@ -20,7 +21,11 @@ interface BaseLogParams {
 
 @Injectable()
 export class ActivityLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => NotificationsGateway))
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   /**
    * Generic method to create activity log
@@ -43,10 +48,48 @@ export class ActivityLogsService {
           new_value: data.newValue ?? null,
           metadata: data.metadata ?? null,
         },
+        include: {
+          users: {
+            select: {
+              id: true,
+              name: true,
+              avatar_url: true,
+            },
+          },
+        },
       });
+
       console.log(
         `✅ Activity log created: ${data.action} ${data.entityType} by ${data.userId}`,
       );
+
+      // 🔔 Emit WebSocket event to project members for real-time activity feed update
+      if (data.projectId) {
+        try {
+          // Get all project members
+          const projectMembers = await this.prisma.project_members.findMany({
+            where: { project_id: data.projectId },
+            select: { user_id: true },
+          });
+
+          const memberIds = projectMembers.map((pm) => pm.user_id);
+
+          console.log(
+            `📡 [ActivityLog] Emitting to ${memberIds.length} project members`,
+          );
+
+          // Emit to each member's activity feed
+          for (const memberId of memberIds) {
+            this.notificationsGateway.emitToUser(memberId, 'activity_log', {
+              ...result,
+              users: result.users,
+            });
+          }
+        } catch (error) {
+          console.error('❌ Failed to emit activity log via WebSocket:', error);
+        }
+      }
+
       return result;
     } catch (error) {
       console.error('❌ Failed to create activity log:', error);
