@@ -42,16 +42,22 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 3000;
-  const host = isLocal ? '0.0.0.0' : 'localhost';
-  await app.listen(port, host);
-
-  const localIP = '192.168.1.17'; // Update this with your actual local IP
-  console.log(`Application is running on:`);
-  console.log(`  Local:   http://localhost:${port}/api`);
+  
+  // Bind to 0.0.0.0 only in local development for LAN access
+  // In production/deployment, don't specify host (defaults to localhost)
   if (isLocal) {
+    await app.listen(port, '0.0.0.0');
+    const localIP = '192.168.1.17'; // Update this with your actual local IP
+    console.log(`Application is running on:`);
+    console.log(`  Local:   http://localhost:${port}/api`);
     console.log(`  Network: http://${localIP}:${port}/api`);
+    console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
+  } else {
+    // Production: bind to default host (localhost) for security
+    await app.listen(port);
+    console.log(`Application is running on: http://localhost:${port}/api`);
+    console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
   }
-  console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
 }
 
 bootstrap().catch((error) => {

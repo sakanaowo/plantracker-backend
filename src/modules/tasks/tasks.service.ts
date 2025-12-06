@@ -19,6 +19,55 @@ export class TasksService {
   ) {}
 
   /**
+   * Check if user has permission to modify a task
+   * Rules:
+   * - Task creator (created_by === userId) can modify
+   * - Task assignees can modify
+   * - Project OWNER/ADMIN can modify any task
+   * - Project MEMBER can only modify tasks they created or are assigned to
+   */
+  private async checkTaskPermission(
+    projectId: string,
+    userId: string,
+    taskCreatorId: string | null,
+    taskAssigneeIds: string[],
+  ) {
+    // If user is the task creator, allow
+    if (taskCreatorId === userId) {
+      return true;
+    }
+
+    // If user is assigned to the task, allow
+    if (taskAssigneeIds.includes(userId)) {
+      return true;
+    }
+
+    // Check user's project role
+    const member = await this.prisma.project_members.findUnique({
+      where: {
+        project_id_user_id: {
+          project_id: projectId,
+          user_id: userId,
+        },
+      },
+    });
+
+    if (!member) {
+      throw new ForbiddenException('You are not a member of this project');
+    }
+
+    // OWNER and ADMIN can modify any task
+    // MEMBER can only modify tasks they created or are assigned to
+    if (member.role === 'OWNER' || member.role === 'ADMIN') {
+      return true;
+    }
+
+    throw new ForbiddenException(
+      'Members can only edit/delete tasks they created or are assigned to',
+    );
+  }
+
+  /**
    * Helper to get workspace/project/board context for a task
    */
   private async getTaskContext(taskId: string) {
@@ -465,11 +514,26 @@ export class TasksService {
             name: true,
           },
         },
+        task_assignees: {
+          select: {
+            user_id: true,
+          },
+        },
       },
     });
 
     if (!currentTask) {
       throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    // Permission check: Only task creator, assignees, or project admin/owner can update
+    if (dto.updatedBy) {
+      await this.checkTaskPermission(
+        currentTask.project_id,
+        dto.updatedBy,
+        currentTask.created_by,
+        currentTask.task_assignees.map((a) => a.user_id),
+      );
     }
 
     // Prepare update data with type conversions
@@ -653,8 +717,34 @@ export class TasksService {
     // Get current task info before moving
     const currentTask = await this.prisma.tasks.findUnique({
       where: { id },
-      select: { board_id: true, title: true },
+      select: {
+        board_id: true,
+        title: true,
+        project_id: true,
+        created_by: true,
+      },
+      include: {
+        task_assignees: {
+          select: {
+            user_id: true,
+          },
+        },
+      },
     });
+
+    if (!currentTask) {
+      throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    // Permission check: Only task creator, assignees, or project admin/owner can move
+    if (movedBy) {
+      await this.checkTaskPermission(
+        currentTask.project_id,
+        movedBy,
+        currentTask.created_by,
+        currentTask.task_assignees.map((a) => a.user_id),
+      );
+    }
 
     let position = new Prisma.Decimal(1024);
 
@@ -808,8 +898,33 @@ export class TasksService {
   async softDelete(id: string, deletedBy?: string): Promise<tasks> {
     const task = await this.prisma.tasks.findUnique({
       where: { id },
-      select: { title: true },
+      select: {
+        title: true,
+        project_id: true,
+        created_by: true,
+      },
+      include: {
+        task_assignees: {
+          select: {
+            user_id: true,
+          },
+        },
+      },
     });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    // Permission check: Only task creator, assignees, or project admin/owner can delete
+    if (deletedBy) {
+      await this.checkTaskPermission(
+        task.project_id,
+        deletedBy,
+        task.created_by,
+        task.task_assignees.map((a) => a.user_id),
+      );
+    }
 
     const deletedTask = await this.prisma.tasks.update({
       where: { id },
