@@ -13,6 +13,10 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { CancelEventDto } from './dto/cancel-event.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import {
+  CreateEventReminderDto,
+  EventReminderResponseDto,
+} from './dto/event-reminder.dto';
 
 @Injectable()
 export class EventsService {
@@ -1137,5 +1141,184 @@ export class EventsService {
     throw new ForbiddenException(
       'Members can only edit/delete events they created',
     );
+  }
+
+  // ==================== EVENT REMINDERS ====================
+
+  /**
+   * Create event reminder(s)
+   * Send reminder to specific users about an event
+   */
+  async createEventReminder(
+    dto: CreateEventReminderDto,
+    senderId: string,
+  ): Promise<{ success: boolean; created: number }> {
+    // Verify event exists
+    const event = await this.prisma.events.findUnique({
+      where: { id: dto.eventId },
+      include: {
+        projects: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // Check sender has permission to send reminders for this event
+    await this.checkEventPermission(
+      event.project_id,
+      senderId,
+      event.created_by,
+    );
+
+    // Create reminders for each recipient
+    const reminders = await Promise.all(
+      dto.recipientIds.map((recipientId) =>
+        this.prisma.event_reminders.create({
+          data: {
+            event_id: dto.eventId,
+            recipient_id: recipientId,
+            sender_id: senderId,
+            message: dto.message,
+          },
+        }),
+      ),
+    );
+
+    this.logger.log(
+      `Created ${reminders.length} event reminders for event ${dto.eventId}`,
+    );
+
+    // Send notifications to recipients
+    try {
+      const sender = await this.prisma.users.findUnique({
+        where: { id: senderId },
+        select: { name: true, email: true },
+      });
+
+      if (sender) {
+        await this.notificationsService.sendEventReminder({
+          eventId: dto.eventId,
+          eventTitle: event.title,
+          eventStartAt: event.start_at,
+          senderName: sender.name || sender.email,
+          message: dto.message,
+          recipientIds: dto.recipientIds,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to send event reminder notifications:', error);
+    }
+
+    return {
+      success: true,
+      created: reminders.length,
+    };
+  }
+
+  /**
+   * Get event reminders for current user
+   */
+  async getUserEventReminders(
+    userId: string,
+  ): Promise<EventReminderResponseDto[]> {
+    const reminders = await this.prisma.event_reminders.findMany({
+      where: {
+        recipient_id: userId,
+        dismissed_at: null,
+      },
+      include: {
+        events: {
+          include: {
+            projects: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        sender: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    return reminders.map((reminder) => ({
+      id: reminder.id,
+      eventId: reminder.event_id,
+      eventTitle: reminder.events.title,
+      eventDate: reminder.events.start_at.toISOString().split('T')[0],
+      eventTime: reminder.events.start_at.toTimeString().slice(0, 5),
+      projectId: reminder.events.project_id,
+      projectName: reminder.events.projects?.name || 'Unknown Project',
+      senderName: reminder.sender.name || reminder.sender.email,
+      message: reminder.message,
+      timestamp: reminder.created_at.getTime(),
+      isRead: reminder.is_read,
+    }));
+  }
+
+  /**
+   * Mark reminder as read
+   */
+  async markReminderAsRead(reminderId: string, userId: string): Promise<void> {
+    const reminder = await this.prisma.event_reminders.findUnique({
+      where: { id: reminderId },
+    });
+
+    if (!reminder) {
+      throw new NotFoundException('Reminder not found');
+    }
+
+    if (reminder.recipient_id !== userId) {
+      throw new ForbiddenException('Not authorized to modify this reminder');
+    }
+
+    await this.prisma.event_reminders.update({
+      where: { id: reminderId },
+      data: { is_read: true },
+    });
+  }
+
+  /**
+   * Dismiss event reminder
+   */
+  async dismissEventReminder(
+    reminderId: string,
+    userId: string,
+  ): Promise<void> {
+    const reminder = await this.prisma.event_reminders.findUnique({
+      where: { id: reminderId },
+    });
+
+    if (!reminder) {
+      throw new NotFoundException('Reminder not found');
+    }
+
+    if (reminder.recipient_id !== userId) {
+      throw new ForbiddenException('Not authorized to dismiss this reminder');
+    }
+
+    await this.prisma.event_reminders.update({
+      where: { id: reminderId },
+      data: {
+        dismissed_at: new Date(),
+      },
+    });
+
+    this.logger.log(`User ${userId} dismissed reminder ${reminderId}`);
   }
 }

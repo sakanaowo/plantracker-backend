@@ -49,18 +49,17 @@ export class NotificationsService {
         createdAt: new Date().toISOString(),
       };
 
-      // Check if user is online (WebSocket connected)
-      const isOnline = this.notificationsGateway.isUserOnline(data.assigneeId);
+      // Try to send via WebSocket (returns true if user is online)
+      const wsSuccess = this.notificationsGateway.emitToUser(
+        data.assigneeId,
+        'notification',
+        notificationPayload,
+      );
 
-      if (isOnline) {
-        // User is online → send via WebSocket (real-time)
+      if (wsSuccess) {
+        // User is online → WebSocket delivered
         this.logger.log(
-          `User ${data.assigneeId} is ONLINE → sending via WebSocket`,
-        );
-        this.notificationsGateway.emitToUser(
-          data.assigneeId,
-          'notification',
-          notificationPayload,
+          `User ${data.assigneeId} is ONLINE → sent via WebSocket`,
         );
 
         // Log as DELIVERED (WebSocket delivered instantly)
@@ -173,23 +172,21 @@ export class NotificationsService {
         createdAt: new Date().toISOString(),
       };
 
-      // Check if user is online (WebSocket connected)
-      const isOnline = this.notificationsGateway.isUserOnline(data.inviteeId);
-      console.log('User online status:', isOnline);
+      // Try to send via WebSocket (returns true if user is online)
+      console.log('📡 Attempting WebSocket delivery...');
+      const wsSuccess = this.notificationsGateway.emitToUser(
+        data.inviteeId,
+        'notification',
+        notificationPayload,
+      );
       console.log(
-        `🎯 Delivery decision: ${isOnline ? 'ONLINE → WebSocket' : 'OFFLINE → FCM'}`,
+        `🎯 WebSocket result: ${wsSuccess ? 'ONLINE → Delivered' : 'OFFLINE'}`,
       );
 
-      if (isOnline) {
-        // User is online → send via WebSocket (real-time)
+      if (wsSuccess) {
+        // User is online → WebSocket delivered
         this.logger.log(
-          `User ${data.inviteeId} is ONLINE → sending via WebSocket`,
-        );
-        console.log('📡 Sending via WebSocket...');
-        this.notificationsGateway.emitToUser(
-          data.inviteeId,
-          'notification',
-          notificationPayload,
+          `User ${data.inviteeId} is ONLINE → sent via WebSocket`,
         );
         console.log('✅ WebSocket notification sent');
 
@@ -332,14 +329,13 @@ export class NotificationsService {
           createdAt: new Date().toISOString(),
         };
 
-        const isOnline = this.notificationsGateway.isUserOnline(userId);
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          userId,
+          'notification',
+          notificationPayload,
+        );
 
-        if (isOnline) {
-          this.notificationsGateway.emitToUser(
-            userId,
-            'notification',
-            notificationPayload,
-          );
+        if (wsSuccess) {
           await this.logNotification({
             userId,
             type: 'TASK_COMMENT',
@@ -441,14 +437,13 @@ export class NotificationsService {
           createdAt: new Date().toISOString(),
         };
 
-        const isOnline = this.notificationsGateway.isUserOnline(userId);
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          userId,
+          'notification',
+          notificationPayload,
+        );
 
-        if (isOnline) {
-          this.notificationsGateway.emitToUser(
-            userId,
-            'notification',
-            notificationPayload,
-          );
+        if (wsSuccess) {
           await this.logNotification({
             userId,
             type: 'TASK_MOVED',
@@ -547,14 +542,13 @@ export class NotificationsService {
           createdAt: new Date().toISOString(),
         };
 
-        const isOnline = this.notificationsGateway.isUserOnline(userId);
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          userId,
+          'notification',
+          notificationPayload,
+        );
 
-        if (isOnline) {
-          this.notificationsGateway.emitToUser(
-            userId,
-            'notification',
-            notificationPayload,
-          );
+        if (wsSuccess) {
           await this.logNotification({
             userId,
             type: 'EVENT_INVITE',
@@ -654,14 +648,13 @@ export class NotificationsService {
           createdAt: new Date().toISOString(),
         };
 
-        const isOnline = this.notificationsGateway.isUserOnline(userId);
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          userId,
+          'notification',
+          notificationPayload,
+        );
 
-        if (isOnline) {
-          this.notificationsGateway.emitToUser(
-            userId,
-            'notification',
-            notificationPayload,
-          );
+        if (wsSuccess) {
           await this.logNotification({
             userId,
             type: 'EVENT_UPDATED',
@@ -752,6 +745,108 @@ export class NotificationsService {
       this.logger.log(`Task reminder sent to user ${data.userId}`);
     } catch (error) {
       this.logger.error(`Failed to send task reminder:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send event reminder notification
+   */
+  async sendEventReminder(data: {
+    eventId: string;
+    eventTitle: string;
+    eventStartAt: Date;
+    senderName: string;
+    message?: string | null;
+    recipientIds: string[];
+  }): Promise<void> {
+    try {
+      const formattedDate = data.eventStartAt.toLocaleDateString('vi-VN');
+      const formattedTime = data.eventStartAt.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const body = data.message
+        ? `${data.senderName}: ${data.message}`
+        : `${data.senderName} nhắc bạn về sự kiện "${data.eventTitle}" lúc ${formattedTime}, ${formattedDate}`;
+
+      const notificationPayload = {
+        id: crypto.randomUUID(),
+        type: 'EVENT_REMINDER',
+        title: '🔔 Event Reminder',
+        body,
+        data: {
+          eventId: data.eventId,
+          eventTitle: data.eventTitle,
+          eventStartAt: data.eventStartAt.toISOString(),
+          senderName: data.senderName,
+          message: data.message || '',
+          deeplink: `/events/${data.eventId}`,
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      // Send to all recipients
+      for (const recipientId of data.recipientIds) {
+        // Try WebSocket first
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          recipientId,
+          'notification',
+          notificationPayload,
+        );
+
+        if (wsSuccess) {
+          this.logger.log(
+            `Event reminder sent via WebSocket to ${recipientId}`,
+          );
+        } else {
+          // Fallback to FCM
+          const devices = await this.prisma.user_devices.findMany({
+            where: { user_id: recipientId, is_active: true },
+          });
+
+          for (const device of devices) {
+            await this.fcmService.sendNotification({
+              token: device.fcm_token,
+              notification: {
+                title: notificationPayload.title,
+                body: notificationPayload.body,
+              },
+              data: {
+                type: 'event_reminder',
+                eventId: data.eventId,
+                eventTitle: data.eventTitle,
+                clickAction: 'OPEN_EVENT_DETAIL',
+              },
+              android: {
+                priority: 'high',
+                notification: {
+                  channelId: 'event_reminders',
+                  priority: 'high',
+                  defaultSound: true,
+                  defaultVibrateTimings: true,
+                },
+              },
+            });
+          }
+
+          this.logger.log(`Event reminder sent via FCM to ${recipientId}`);
+        }
+
+        // Log to database
+        await this.logNotification({
+          userId: recipientId,
+          type: 'EVENT_REMINDER' as notification_type,
+          message: body,
+        });
+      }
+
+      this.logger.log(
+        `Event reminder sent to ${data.recipientIds.length} recipients`,
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send event reminder:`, error);
       throw error;
     }
   }
@@ -933,12 +1028,15 @@ export class NotificationsService {
         createdAt: new Date().toISOString(),
       };
 
-      // Check if user is online
-      const isOnline = this.notificationsGateway.isUserOnline(userId);
+      // Try to send via WebSocket
+      const wsSuccess = this.notificationsGateway.emitToUser(
+        userId,
+        'notification',
+        payload,
+      );
 
-      if (isOnline) {
-        // Send via WebSocket
-        this.notificationsGateway.emitToUser(userId, 'notification', payload);
+      if (wsSuccess) {
+        // User is online → WebSocket delivered
         await this.logNotification({
           userId,
           type: notification.type,

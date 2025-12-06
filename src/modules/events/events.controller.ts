@@ -8,6 +8,8 @@ import {
   Delete,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,6 +21,7 @@ import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { CancelEventDto } from './dto/cancel-event.dto';
+import { CreateEventReminderDto } from './dto/event-reminder.dto';
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
@@ -226,5 +229,50 @@ export class EventsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.eventsService.hardDeleteEvent(projectId, eventId, userId);
+  }
+
+  // ==================== EVENT REMINDERS ====================
+
+  @Post('reminders')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Send event reminder to users' })
+  @ApiResponse({ status: 201, description: 'Event reminder sent successfully' })
+  createEventReminder(
+    @Body() dto: CreateEventReminderDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.createEventReminder(dto, userId);
+  }
+
+  @Get('reminders/my')
+  @ApiOperation({ summary: 'Get my event reminders' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event reminders retrieved successfully',
+  })
+  getMyEventReminders(@CurrentUser('id') userId: string) {
+    return this.eventsService.getUserEventReminders(userId);
+  }
+
+  @Patch('reminders/:id/read')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Mark event reminder as read' })
+  @ApiResponse({ status: 204, description: 'Reminder marked as read' })
+  markReminderAsRead(
+    @Param('id') reminderId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.markReminderAsRead(reminderId, userId);
+  }
+
+  @Delete('reminders/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Dismiss event reminder' })
+  @ApiResponse({ status: 204, description: 'Reminder dismissed successfully' })
+  dismissEventReminder(
+    @Param('id') reminderId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventsService.dismissEventReminder(reminderId, userId);
   }
 }

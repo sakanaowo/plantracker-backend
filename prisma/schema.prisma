@@ -120,6 +120,7 @@ model events {
   updated_at          DateTime             @default(now()) @db.Timestamptz(6)
   users               users?               @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   projects            projects             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event_reminders     event_reminders[]
   external_event_map  external_event_map[]
   participants        participants[]
 
@@ -234,6 +235,23 @@ model participants {
   users      users?              @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 
   @@unique([event_id, email])
+}
+
+model event_reminders {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  event_id     String    @db.Uuid
+  recipient_id String
+  sender_id    String
+  message      String?
+  is_read      Boolean   @default(false)
+  dismissed_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  events       events    @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipient    users     @relation("event_reminders_recipient", fields: [recipient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sender       users     @relation("event_reminders_sender", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([recipient_id, is_read, dismissed_at], map: "idx_event_reminders_recipient")
+  @@index([event_id], map: "idx_event_reminders_event")
 }
 
 model project_invitations {
@@ -435,6 +453,8 @@ model users {
   created_at                                                DateTime              @default(now()) @db.Timestamptz(6)
   updated_at                                                DateTime              @default(now()) @db.Timestamptz(6)
   activity_logs                                             activity_logs[]
+  event_reminders_received                                  event_reminders[]     @relation("event_reminders_recipient")
+  event_reminders_sent                                      event_reminders[]     @relation("event_reminders_sender")
   events                                                    events[]
   integration_tokens                                        integration_tokens[]
   memberships                                               memberships[]
