@@ -42,7 +42,7 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 3000;
-  
+
   // Bind to 0.0.0.0 only in local development for LAN access
   // In production/deployment, don't specify host (defaults to localhost)
   if (isLocal) {

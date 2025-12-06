@@ -722,8 +722,6 @@ export class TasksService {
         title: true,
         project_id: true,
         created_by: true,
-      },
-      include: {
         task_assignees: {
           select: {
             user_id: true,
@@ -902,8 +900,6 @@ export class TasksService {
         title: true,
         project_id: true,
         created_by: true,
-      },
-      include: {
         task_assignees: {
           select: {
             user_id: true,
