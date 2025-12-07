@@ -221,9 +221,10 @@ export class NotificationsGateway
 
   /**
    * Emit notification to specific user
-   * Called from NotificationsService when creating notifications
+   * Returns true if user is online and message was sent
+   * Returns false if user is offline (caller should use FCM fallback)
    */
-  emitToUser(userId: string, event: string, data: any) {
+  emitToUser(userId: string, event: string, data: any): boolean {
     const userRoom = `user_${userId}`;
     const isOnline = this.isUserOnline(userId);
     const socketCount = this.onlineUsers.get(userId)?.size || 0;
@@ -238,10 +239,12 @@ export class NotificationsGateway
       console.log(
         `⚠️ [WebSocket] User ${userId} not connected - message will be lost!`,
       );
+      return false;
     }
 
     this.server.to(userRoom).emit(event, data);
     console.log(`✅ [WebSocket] Message emitted to room ${userRoom}`);
+    return true;
   }
 
   /**

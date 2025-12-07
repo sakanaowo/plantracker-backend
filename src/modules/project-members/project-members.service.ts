@@ -80,8 +80,8 @@ export class ProjectMembersService {
       });
       console.log('✅ Project converted to TEAM');
 
-      // Add workspace owner as project OWNER member
-      console.log('🔧 DEBUG: Creating project_member with data:', {
+      // Add/Update workspace owner as project OWNER member (use upsert to avoid duplicate)
+      console.log('🔧 DEBUG: Upserting project_member with data:', {
         project_id: projectId,
         user_id: invitedBy,
         user_id_type: typeof invitedBy,
@@ -91,22 +91,32 @@ export class ProjectMembersService {
       });
 
       try {
-        await this.prisma.project_members.create({
-          data: {
+        await this.prisma.project_members.upsert({
+          where: {
+            project_id_user_id: {
+              project_id: projectId,
+              user_id: invitedBy,
+            },
+          },
+          update: {
+            role: 'OWNER', // Ensure role is OWNER
+          },
+          create: {
             project_id: projectId,
             user_id: invitedBy, // The workspace owner becomes project owner
             role: 'OWNER',
             added_by: invitedBy,
           },
         });
-        console.log('✅ Workspace owner added as project OWNER');
+        console.log('✅ Workspace owner added/updated as project OWNER');
       } catch (error) {
-        console.error('❌ Failed to create project_member:', error);
+        console.error('❌ Failed to upsert project_member:', error);
         throw error;
       }
 
       // Log conversion activity
       await this.activityLogsService.logProjectUpdated({
+        workspaceId: project.workspace_id, // ✅ Add workspace
         projectId,
         userId: invitedBy,
         projectName: project.name,
@@ -189,7 +199,7 @@ export class ProjectMembersService {
         expires_at: expiresAt,
       },
       include: {
-        users: {
+        users_project_invitations_user_idTousers: {
           select: {
             id: true,
             name: true,
@@ -253,6 +263,9 @@ export class ProjectMembersService {
             name: true,
             email: true,
             avatar_url: true,
+            bio: true,
+            job_title: true,
+            phone_number: true,
           },
         },
       },
@@ -294,6 +307,12 @@ export class ProjectMembersService {
       where: { id: memberId },
       include: {
         users: true,
+        projects: {
+          select: {
+            workspace_id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -336,11 +355,13 @@ export class ProjectMembersService {
     // Log activity
     await this.activityLogsService.logMemberRoleUpdated({
       projectId,
+      workspaceId: member.projects.workspace_id,
       userId: updatedBy,
       memberId,
       memberName: member.users.name,
       oldRole: member.role,
       newRole: dto.role,
+      projectName: member.projects.name, // ✅ Add project name
     });
 
     return updated;
@@ -358,6 +379,12 @@ export class ProjectMembersService {
       where: { id: memberId },
       include: {
         users: true,
+        projects: {
+          select: {
+            workspace_id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -387,10 +414,12 @@ export class ProjectMembersService {
     // Log activity
     await this.activityLogsService.logMemberRemoved({
       projectId,
+      workspaceId: member.projects.workspace_id,
       userId: removedBy,
       memberId,
       memberName: member.users.name,
       role: member.role,
+      projectName: member.projects.name, // ✅ Add project name
     });
 
     return { success: true };
@@ -417,7 +446,7 @@ export class ProjectMembersService {
             description: true,
           },
         },
-        inviter: {
+        users_project_invitations_invited_byTousers: {
           select: {
             id: true,
             name: true,
@@ -447,8 +476,8 @@ export class ProjectMembersService {
       where: { id: invitationId },
       include: {
         projects: true,
-        users: true,
-        inviter: true,
+        users_project_invitations_user_idTousers: true,
+        users_project_invitations_invited_byTousers: true,
       },
     });
 
@@ -475,43 +504,37 @@ export class ProjectMembersService {
 
     const updatedStatus = action === 'accept' ? 'ACCEPTED' : 'DECLINED';
 
-    // Update invitation status
-    const updatedInvitation = await this.prisma.project_invitations.update({
-      where: { id: invitationId },
-      data: {
-        status: updatedStatus,
-        updated_at: new Date(),
-      },
-    });
-
-    // If accepted, add user as project member
-    if (action === 'accept') {
-      // Check if already a member (safety check)
-      const existingMember = await this.prisma.project_members.findUnique({
-        where: {
-          project_id_user_id: {
-            project_id: invitation.project_id,
-            user_id: userId,
-          },
-        },
-      });
-
-      if (!existingMember) {
-        await this.prisma.project_members.create({
-          data: {
-            project_id: invitation.project_id,
-            user_id: userId,
-            role: invitation.role,
-            added_by: invitation.invited_by,
+    // ✅ FIX: Wrap all database operations in a transaction for atomicity
+    const result = await this.prisma.$transaction(async (tx) => {
+      // If accepted, add user as project member FIRST (before updating status)
+      if (action === 'accept') {
+        // Check if already a member (safety check)
+        const existingMember = await tx.project_members.findUnique({
+          where: {
+            project_id_user_id: {
+              project_id: invitation.project_id,
+              user_id: userId,
+            },
           },
         });
-        console.log('✅ Added user to project_members');
-      }
 
-      // AUTO-ADD: Add user to workspace memberships if not already a member
-      const workspaceId = invitation.projects.workspace_id;
-      const existingWorkspaceMembership =
-        await this.prisma.memberships.findUnique({
+        if (!existingMember) {
+          await tx.project_members.create({
+            data: {
+              project_id: invitation.project_id,
+              user_id: userId,
+              role: invitation.role,
+              added_by: invitation.invited_by,
+            },
+          });
+          console.log('✅ Added user to project_members');
+        } else {
+          console.log('ℹ️ User already a member, skipping create');
+        }
+
+        // AUTO-ADD: Add user to workspace memberships if not already a member
+        const workspaceId = invitation.projects.workspace_id;
+        const existingWorkspaceMembership = await tx.memberships.findUnique({
           where: {
             user_id_workspace_id: {
               user_id: userId,
@@ -520,30 +543,47 @@ export class ProjectMembersService {
           },
         });
 
-      if (!existingWorkspaceMembership) {
-        await this.prisma.memberships.create({
-          data: {
-            user_id: userId,
-            workspace_id: workspaceId,
-            role: 'MEMBER', // Default workspace member role
-          },
-        });
-        console.log(
-          `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
-        );
-      } else {
-        console.log(
-          `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
-        );
+        if (!existingWorkspaceMembership) {
+          await tx.memberships.create({
+            data: {
+              user_id: userId,
+              workspace_id: workspaceId,
+              role: 'MEMBER', // Default workspace member role
+            },
+          });
+          console.log(
+            `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
+          );
+        } else {
+          console.log(
+            `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
+          );
+        }
       }
 
+      // Update invitation status AFTER successfully creating member (if accept)
+      const updatedInvitation = await tx.project_invitations.update({
+        where: { id: invitationId },
+        data: {
+          status: updatedStatus,
+          updated_at: new Date(),
+        },
+      });
+
+      return updatedInvitation;
+    });
+
+    const updatedInvitation = result;
+
+    // Post-transaction operations (notifications and logging)
+    if (action === 'accept') {
       // Log member added when accepted (separate from invitation sent)
       await this.activityLogsService.logMemberAdded({
         workspaceId: invitation.projects.workspace_id,
         projectId: invitation.project_id,
         userId: userId, // The user who accepted (not inviter)
         memberId: userId,
-        memberName: invitation.users.name,
+        memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
         projectName: invitation.projects.name,
         metadata: {
@@ -561,12 +601,13 @@ export class ProjectMembersService {
           {
             type: 'PROJECT_INVITE_ACCEPTED',
             title: 'Lời mời được chấp nhận',
-            body: `${invitation.users.name} đã chấp nhận lời mời tham gia project "${invitation.projects.name}"`,
+            body: `${invitation.users_project_invitations_user_idTousers.name} đã chấp nhận lời mời tham gia project "${invitation.projects.name}"`,
             data: {
               projectId: invitation.project_id,
               invitationId: invitationId,
               acceptedBy: userId,
-              acceptedByName: invitation.users.name,
+              acceptedByName:
+                invitation.users_project_invitations_user_idTousers.name,
               role: invitation.role,
             },
             priority: 'HIGH',
@@ -580,10 +621,12 @@ export class ProjectMembersService {
       // Log invitation declined
       await this.activityLogsService.logMemberRemoved({
         projectId: invitation.project_id,
+        workspaceId: invitation.projects.workspace_id,
         userId: invitation.invited_by,
         memberId: userId,
-        memberName: invitation.users.name,
+        memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
+        projectName: invitation.projects.name, // ✅ Add project name
       });
 
       // ✅ FIX: Send notification to inviter when invitation is declined
@@ -593,12 +636,13 @@ export class ProjectMembersService {
           {
             type: 'PROJECT_INVITE_DECLINED',
             title: 'Lời mời bị từ chối',
-            body: `${invitation.users.name} đã từ chối lời mời tham gia project "${invitation.projects.name}"`,
+            body: `${invitation.users_project_invitations_user_idTousers.name} đã từ chối lời mời tham gia project "${invitation.projects.name}"`,
             data: {
               projectId: invitation.project_id,
               invitationId: invitationId,
               declinedBy: userId,
-              declinedByName: invitation.users.name,
+              declinedByName:
+                invitation.users_project_invitations_user_idTousers.name,
               role: invitation.role,
             },
             priority: 'HIGH',
@@ -662,6 +706,7 @@ export class ProjectMembersService {
 
     // Log activity
     await this.activityLogsService.logProjectUpdated({
+      workspaceId: project.workspace_id, // ✅ Add workspace
       projectId,
       userId,
       projectName: project.name,

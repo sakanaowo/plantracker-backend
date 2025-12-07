@@ -7,7 +7,7 @@ import { Prisma, tasks, task_comments, issue_status } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
-import { GoogleCalendarService } from '../calendar/google-calendar.service';
+import { TaskCalendarSyncService } from '../calendar/task-calendar-sync.service';
 
 @Injectable()
 export class TasksService {
@@ -15,8 +15,57 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly activityLogsService: ActivityLogsService,
-    private readonly googleCalendarService: GoogleCalendarService,
+    private readonly taskCalendarSyncService: TaskCalendarSyncService,
   ) {}
+
+  /**
+   * Check if user has permission to modify a task
+   * Rules:
+   * - Task creator (created_by === userId) can modify
+   * - Task assignees can modify
+   * - Project OWNER/ADMIN can modify any task
+   * - Project MEMBER can only modify tasks they created or are assigned to
+   */
+  private async checkTaskPermission(
+    projectId: string,
+    userId: string,
+    taskCreatorId: string | null,
+    taskAssigneeIds: string[],
+  ) {
+    // If user is the task creator, allow
+    if (taskCreatorId === userId) {
+      return true;
+    }
+
+    // If user is assigned to the task, allow
+    if (taskAssigneeIds.includes(userId)) {
+      return true;
+    }
+
+    // Check user's project role
+    const member = await this.prisma.project_members.findUnique({
+      where: {
+        project_id_user_id: {
+          project_id: projectId,
+          user_id: userId,
+        },
+      },
+    });
+
+    if (!member) {
+      throw new ForbiddenException('You are not a member of this project');
+    }
+
+    // OWNER and ADMIN can modify any task
+    // MEMBER can only modify tasks they created or are assigned to
+    if (member.role === 'OWNER' || member.role === 'ADMIN') {
+      return true;
+    }
+
+    throw new ForbiddenException(
+      'Members can only edit/delete tasks they created or are assigned to',
+    );
+  }
 
   /**
    * Helper to get workspace/project/board context for a task
@@ -74,12 +123,156 @@ export class TasksService {
             },
           },
         },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
   }
 
-  getById(id: string): Promise<tasks | null> {
-    return this.prisma.tasks.findFirst({
+  async getMyAssignedTasksInProject(
+    userId: string,
+    projectId: string,
+  ): Promise<tasks[]> {
+    return this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+        task_assignees: {
+          some: {
+            user_id: userId,
+          },
+        },
+      },
+      orderBy: [{ due_at: 'asc' }, { created_at: 'asc' }],
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get ALL tasks in a project (not just assigned to current user)
+   * For "All Work" view in project - shows complete project overview
+   */
+  async getAllTasksInProject(projectId: string): Promise<tasks[]> {
+    return this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+      },
+      orderBy: [
+        { status: 'asc' }, // Group by status first (TO_DO, IN_PROGRESS, DONE)
+        { due_at: 'asc' }, // Then by due date
+        { created_at: 'desc' }, // Then by creation date (newest first)
+      ],
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get statistics for All Work view
+   * Returns counts by status, overdue tasks, and total tasks
+   */
+  async getAllWorkStatistics(projectId: string) {
+    const now = new Date();
+
+    // Get all active tasks
+    const allTasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+      },
+      select: {
+        status: true,
+        due_at: true,
+      },
+    });
+
+    // Count by status
+    const todoCount = allTasks.filter((t) => t.status === 'TO_DO').length;
+    const inProgressCount = allTasks.filter(
+      (t) => t.status === 'IN_PROGRESS',
+    ).length;
+    const doneCount = allTasks.filter((t) => t.status === 'DONE').length;
+
+    // Count overdue (has due_at in past and not DONE)
+    const overdueCount = allTasks.filter(
+      (t) => t.due_at && t.due_at < now && t.status !== 'DONE',
+    ).length;
+
+    return {
+      totalCount: allTasks.length,
+      todoCount,
+      inProgressCount,
+      doneCount,
+      overdueCount,
+    };
+  }
+
+  async getById(id: string, userId?: string): Promise<tasks | null> {
+    const task = await this.prisma.tasks.findFirst({
       where: { id },
       include: {
         task_assignees: {
@@ -105,8 +298,24 @@ export class TasksService {
             },
           },
         },
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
+
+    // ✅ Check if current user has synced this task to their calendar
+    if (task && userId) {
+      const isUserSynced =
+        task.task_calendar_sync_users?.includes(userId) || false;
+      // Override calendar_reminder_enabled to show per-user sync status
+      (task as any).calendar_reminder_enabled = isUserSynced;
+    }
+
+    return task;
   }
 
   async create(dto: {
@@ -294,12 +503,20 @@ export class TasksService {
       updatedBy?: string;
     },
   ): Promise<tasks> {
+    console.log('\n🔵 [TASK-UPDATE] Starting update for task:', id);
+    console.log('  DTO received:', JSON.stringify(dto, null, 2));
+
     const currentTask = await this.prisma.tasks.findUnique({
       where: { id },
       include: {
         projects: {
           select: {
             name: true,
+          },
+        },
+        task_assignees: {
+          select: {
+            user_id: true,
           },
         },
       },
@@ -309,14 +526,29 @@ export class TasksService {
       throw new NotFoundException(`Task with ID ${id} not found`);
     }
 
+    // Permission check: Only task creator, assignees, or project admin/owner can update
+    if (dto.updatedBy) {
+      await this.checkTaskPermission(
+        currentTask.project_id,
+        dto.updatedBy,
+        currentTask.created_by,
+        currentTask.task_assignees.map((a) => a.user_id),
+      );
+    }
+
     // Prepare update data with type conversions
+    // ✅ ONLY update fields that are explicitly set AND not null
     const updateData: any = {};
 
-    if (dto.title !== undefined) updateData.title = dto.title;
-    if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.title !== undefined && dto.title !== null)
+      updateData.title = dto.title;
+    if (dto.description !== undefined && dto.description !== null)
+      updateData.description = dto.description;
+    // ⚠️ Position should ONLY be updated via move() method, not here
+    if (dto.position !== undefined && dto.position !== null)
+      updateData.position = dto.position;
 
-    // Date fields - convert string to Date
+    // Date fields - convert string to Date (allow explicit null to clear dates)
     if (dto.dueAt !== undefined) {
       updateData.due_at = dto.dueAt ? new Date(dto.dueAt) : null;
     }
@@ -324,35 +556,92 @@ export class TasksService {
       updateData.start_at = dto.startAt ? new Date(dto.startAt) : null;
     }
 
-    // Enum fields
-    if (dto.priority !== undefined) updateData.priority = dto.priority;
-    if (dto.type !== undefined) updateData.type = dto.type;
-    if (dto.status !== undefined) updateData.status = dto.status;
+    // Enum fields - skip if null
+    if (dto.priority !== undefined && dto.priority !== null)
+      updateData.priority = dto.priority;
+    if (dto.type !== undefined && dto.type !== null) updateData.type = dto.type;
+    if (dto.status !== undefined && dto.status !== null)
+      updateData.status = dto.status;
 
-    // Relationship fields
-    if (dto.sprintId !== undefined) updateData.sprint_id = dto.sprintId;
-    if (dto.epicId !== undefined) updateData.epic_id = dto.epicId;
-    if (dto.parentTaskId !== undefined)
+    // Relationship fields - skip if null (not implemented yet)
+    if (dto.sprintId !== undefined && dto.sprintId !== null)
+      updateData.sprint_id = dto.sprintId;
+    if (dto.epicId !== undefined && dto.epicId !== null)
+      updateData.epic_id = dto.epicId;
+    if (dto.parentTaskId !== undefined && dto.parentTaskId !== null)
       updateData.parent_task_id = dto.parentTaskId;
 
-    // Numeric fields
-    if (dto.storyPoints !== undefined)
+    // Numeric fields - skip if null (not implemented yet)
+    if (dto.storyPoints !== undefined && dto.storyPoints !== null)
       updateData.story_points = dto.storyPoints;
-    if (dto.originalEstimateSec !== undefined)
+    if (
+      dto.originalEstimateSec !== undefined &&
+      dto.originalEstimateSec !== null
+    )
       updateData.original_estimate_sec = dto.originalEstimateSec;
-    if (dto.remainingEstimateSec !== undefined)
+    if (
+      dto.remainingEstimateSec !== undefined &&
+      dto.remainingEstimateSec !== null
+    )
       updateData.remaining_estimate_sec = dto.remainingEstimateSec;
 
-    // Calendar sync fields
-    if (dto.calendarReminderEnabled !== undefined)
-      updateData.calendar_reminder_enabled = dto.calendarReminderEnabled;
-    if (dto.calendarReminderTime !== undefined)
-      updateData.calendar_reminder_time = dto.calendarReminderTime;
+    // ❌ Calendar sync fields removed - use dedicated calendar-sync endpoint instead
+    // Calendar sync is now per-user via task_calendar_sync_users array
+    // Use PUT /tasks/:id/calendar-sync endpoint to enable/disable sync
+
+    console.log(
+      '  📝 Update data prepared:',
+      JSON.stringify(updateData, null, 2),
+    );
 
     const updatedTask = await this.prisma.tasks.update({
       where: { id },
       data: updateData,
+      // ✅ Include assignees and labels in response
+      include: {
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
     });
+
+    console.log('  ✅ Task updated successfully');
+    console.log('    - Title:', updatedTask.title);
+    console.log(
+      '    - Description:',
+      updatedTask.description?.substring(0, 50) || 'null',
+    );
+    console.log('    - Priority:', updatedTask.priority);
+    console.log('    - Due At:', updatedTask.due_at);
+    console.log(
+      '    - Calendar Synced Users:',
+      updatedTask.task_calendar_sync_users?.length || 0,
+    );
+    console.log(
+      '    - Assignees count:',
+      updatedTask.task_assignees?.length || 0,
+    );
+    console.log('    - Labels count:', updatedTask.task_labels?.length || 0);
 
     // Log task update
     if (dto.updatedBy) {
@@ -428,8 +717,32 @@ export class TasksService {
     // Get current task info before moving
     const currentTask = await this.prisma.tasks.findUnique({
       where: { id },
-      select: { board_id: true, title: true },
+      select: {
+        board_id: true,
+        title: true,
+        project_id: true,
+        created_by: true,
+        task_assignees: {
+          select: {
+            user_id: true,
+          },
+        },
+      },
     });
+
+    if (!currentTask) {
+      throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    // Permission check: Only task creator, assignees, or project admin/owner can move
+    if (movedBy) {
+      await this.checkTaskPermission(
+        currentTask.project_id,
+        movedBy,
+        currentTask.created_by,
+        currentTask.task_assignees.map((a) => a.user_id),
+      );
+    }
 
     let position = new Prisma.Decimal(1024);
 
@@ -583,8 +896,31 @@ export class TasksService {
   async softDelete(id: string, deletedBy?: string): Promise<tasks> {
     const task = await this.prisma.tasks.findUnique({
       where: { id },
-      select: { title: true },
+      select: {
+        title: true,
+        project_id: true,
+        created_by: true,
+        task_assignees: {
+          select: {
+            user_id: true,
+          },
+        },
+      },
     });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${id} not found`);
+    }
+
+    // Permission check: Only task creator, assignees, or project admin/owner can delete
+    if (deletedBy) {
+      await this.checkTaskPermission(
+        task.project_id,
+        deletedBy,
+        task.created_by,
+        task.task_assignees.map((a) => a.user_id),
+      );
+    }
 
     const deletedTask = await this.prisma.tasks.update({
       where: { id },
@@ -1036,7 +1372,7 @@ export class TasksService {
   }
 
   /**
-   * Update task with calendar sync
+   * Update task with calendar sync (delegates to TaskCalendarSyncService)
    */
   async updateTaskWithCalendarSync(
     userId: string,
@@ -1048,161 +1384,30 @@ export class TasksService {
       calendarReminderTime?: number;
     },
   ): Promise<tasks> {
-    console.log('\n🟢 [CALENDAR-SYNC-SERVICE] Starting update...');
-    console.log('  Task ID:', taskId);
-    console.log('  User ID:', userId);
-
-    const task = await this.prisma.tasks.findUnique({
-      where: { id: taskId },
-    });
-
-    if (!task) {
-      console.log('❌ [CALENDAR-SYNC-SERVICE] Task not found!');
-      throw new NotFoundException(`Task with ID ${taskId} not found`);
-    }
-
-    console.log('  Current task state:');
-    console.log(
-      '    - calendar_reminder_enabled:',
-      task.calendar_reminder_enabled,
+    return this.taskCalendarSyncService.updateTaskWithCalendarSync(
+      userId,
+      taskId,
+      updateData,
     );
-    console.log('    - calendar_reminder_time:', task.calendar_reminder_time);
-    console.log('    - calendar_event_id:', task.calendar_event_id);
-    console.log('    - last_synced_at:', task.last_synced_at);
+  }
 
-    // Check if user has Google Calendar connected
-    const integration = await this.prisma.integration_tokens.findFirst({
-      where: {
-        user_id: userId,
-        provider: 'GOOGLE_CALENDAR',
-        status: 'ACTIVE',
-      },
-    });
-
-    const hasCalendarIntegration = !!integration;
-    console.log(
-      '  Google Calendar integration:',
-      hasCalendarIntegration ? '✅ Connected' : '❌ Not connected',
-    );
-
-    // Prepare update data
-    const dataToUpdate: any = {};
-
-    if (updateData.title !== undefined) {
-      dataToUpdate.title = updateData.title;
-    }
-
-    if (updateData.dueAt !== undefined) {
-      dataToUpdate.due_at = updateData.dueAt;
-    }
-
-    // Handle calendar sync
-    if (
-      hasCalendarIntegration &&
-      updateData.calendarReminderEnabled !== undefined
-    ) {
-      dataToUpdate.calendar_reminder_enabled =
-        updateData.calendarReminderEnabled;
-
-      if (updateData.calendarReminderTime !== undefined) {
-        dataToUpdate.calendar_reminder_time = updateData.calendarReminderTime;
-      }
-
-      const taskTitle = updateData.title || task.title;
-      const taskDueAt = updateData.dueAt || task.due_at;
-      const reminderTime =
-        updateData.calendarReminderTime || task.calendar_reminder_time || 30;
-
-      if (updateData.calendarReminderEnabled && taskDueAt) {
-        console.log('  📅 Syncing to Google Calendar...');
-        if (task.calendar_event_id) {
-          console.log('    → Updating existing event:', task.calendar_event_id);
-          // Update existing calendar event
-          const success =
-            await this.googleCalendarService.updateTaskReminderEvent(
-              userId,
-              task.calendar_event_id,
-              taskTitle,
-              taskDueAt,
-              reminderTime,
-            );
-
-          if (success) {
-            dataToUpdate.last_synced_at = new Date();
-            console.log('    ✅ Event updated successfully');
-          } else {
-            console.log('    ❌ Event update failed');
-          }
-        } else {
-          console.log('    → Creating new calendar event');
-          // Create new calendar event
-          const calendarEventId =
-            await this.googleCalendarService.createTaskReminderEvent(
-              userId,
-              taskId,
-              taskTitle,
-              taskDueAt,
-              reminderTime,
-            );
-
-          if (calendarEventId) {
-            dataToUpdate.calendar_event_id = calendarEventId;
-            dataToUpdate.last_synced_at = new Date();
-            console.log('    ✅ Event created:', calendarEventId);
-          } else {
-            console.log('    ❌ Event creation failed');
-          }
-        }
-      } else if (
-        !updateData.calendarReminderEnabled &&
-        task.calendar_event_id
-      ) {
-        console.log('  🗑️  Removing from Google Calendar...');
-        console.log('    → Deleting event:', task.calendar_event_id);
-        // Remove from calendar
-        await this.googleCalendarService.deleteTaskReminderEvent(
-          userId,
-          task.calendar_event_id,
-        );
-        dataToUpdate.calendar_event_id = null;
-        console.log('    ✅ Event deleted');
-      }
-    }
-
-    // Update task in database
-    console.log('  💾 Updating database with:');
-    console.log('    ', JSON.stringify(dataToUpdate, null, 2));
-
-    const updatedTask = await this.prisma.tasks.update({
-      where: { id: taskId },
-      data: dataToUpdate,
-    });
-
-    console.log('\n✅ [CALENDAR-SYNC-SERVICE] Update complete!');
-    console.log('  Final state:');
-    console.log(
-      '    - calendar_reminder_enabled:',
-      updatedTask.calendar_reminder_enabled,
-    );
-    console.log(
-      '    - calendar_reminder_time:',
-      updatedTask.calendar_reminder_time,
-    );
-    console.log('    - calendar_event_id:', updatedTask.calendar_event_id);
-    console.log('    - last_synced_at:', updatedTask.last_synced_at);
-
-    return updatedTask;
+  /**
+   * Unsync task from Google Calendar (delegates to TaskCalendarSyncService)
+   */
+  async unsyncTaskFromCalendar(userId: string, taskId: string): Promise<tasks> {
+    return this.taskCalendarSyncService.unsyncTaskFromCalendar(userId, taskId);
   }
 
   /**
    * Get tasks with calendar info for Calendar Tab
+   * Returns tasks in the same format as listByBoard for consistency
    */
   async getTasksForCalendar(
     projectId: string,
     startDate: Date,
     endDate: Date,
   ): Promise<any[]> {
-    const tasks = await this.prisma.tasks.findMany({
+    return this.prisma.tasks.findMany({
       where: {
         project_id: projectId,
         due_at: {
@@ -1212,15 +1417,11 @@ export class TasksService {
         deleted_at: null,
       },
       include: {
-        users_tasks_created_byTousers: {
-          select: {
-            name: true,
-            email: true,
-            avatar_url: true,
-          },
-        },
         boards: {
-          select: { name: true },
+          select: {
+            id: true,
+            name: true,
+          },
         },
         task_assignees: {
           include: {
@@ -1234,24 +1435,31 @@ export class TasksService {
             },
           },
         },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+        users: {
+          select: {
+            id: true,
+            name: true,
+            avatar_url: true,
+          },
+        },
       },
-      orderBy: { due_at: 'asc' },
+      orderBy: [
+        { due_at: 'asc' },
+        { priority: 'desc' },
+        { created_at: 'desc' },
+      ],
     });
-
-    return tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      description: task.description,
-      dueAt: task.due_at,
-      priority: task.priority,
-      hasReminder: task.calendar_reminder_enabled,
-      reminderTime: task.calendar_reminder_time,
-      calendarEventId: task.calendar_event_id,
-      lastSyncedAt: task.last_synced_at,
-      creator: task.users_tasks_created_byTousers,
-      boardName: task.boards.name,
-      assignees: task.task_assignees.map((a) => a.users),
-    }));
   }
 
   /**

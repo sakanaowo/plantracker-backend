@@ -132,4 +132,12 @@ export class UsersController {
   getDevices(@CurrentUser() userId: string) {
     return this.users.getUserDevices(userId);
   }
+
+  @Delete('me')
+  @ApiBearerAuth()
+  @UseGuards(CombinedAuthGuard)
+  @ApiOperation({ summary: 'Delete current user account permanently' })
+  async deleteAccount(@CurrentUser() userId: string) {
+    return this.users.deleteAccount(userId);
+  }
 }

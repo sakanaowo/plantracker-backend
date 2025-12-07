@@ -58,7 +58,7 @@ export class UsersService {
         console.log('[ensureFromFirebase] Creating new user');
         user = await this.prisma.users.create({
           data: {
-            id: uid, // ✅ Use Firebase UID as primary key
+            id: uid,
             email,
             name: name ?? email.split('@')[0],
             avatar_url: avatarUrl ?? null,
@@ -256,7 +256,16 @@ export class UsersService {
     return this.prisma.users.findUnique({ where: { id } });
   }
 
-  async updateMeById(id: string, data: { name?: string; avatar_url?: string }) {
+  async updateMeById(
+    id: string,
+    data: {
+      name?: string;
+      avatar_url?: string;
+      bio?: string;
+      job_title?: string;
+      phone_number?: string;
+    },
+  ) {
     console.log('🔄 updateMeById called with:', { id, data });
 
     // Update user profile
@@ -265,6 +274,9 @@ export class UsersService {
       data: {
         name: data.name ?? undefined,
         avatar_url: data.avatar_url ?? undefined,
+        bio: data.bio ?? undefined,
+        job_title: data.job_title ?? undefined,
+        phone_number: data.phone_number ?? undefined,
         updated_at: new Date(),
       },
     });
@@ -476,5 +488,47 @@ export class UsersService {
       isActive: device.is_active,
       lastActiveAt: device.last_active_at ?? undefined,
     };
+  }
+
+  /**
+   * Delete user account permanently
+   * This will cascade delete all related data
+   */
+  async deleteAccount(userId: string) {
+    console.log(`🗑️ Deleting user account: ${userId}`);
+
+    try {
+      // 1. Delete from Firebase Authentication FIRST
+      // This prevents orphan DB records if Firebase deletion fails
+      try {
+        await admin.auth().deleteUser(userId);
+        console.log(`✅ Successfully deleted Firebase user: ${userId}`);
+      } catch (firebaseError: any) {
+        // If Firebase user doesn't exist, that's okay - continue with DB deletion
+        if (firebaseError?.code === 'auth/user-not-found') {
+          console.log(
+            `ℹ️ Firebase user ${userId} not found, proceeding with DB deletion`,
+          );
+        } else {
+          // Other Firebase errors should fail the operation
+          console.error(
+            `❌ Failed to delete Firebase user ${userId}:`,
+            firebaseError,
+          );
+          throw new BadRequestException('Failed to delete Firebase account');
+        }
+      }
+
+      // 2. Delete from database (cascade will handle related data)
+      await this.prisma.users.delete({
+        where: { id: userId },
+      });
+
+      console.log(`✅ Successfully deleted user from database: ${userId}`);
+      return { message: 'Account deleted successfully' };
+    } catch (error) {
+      console.error(`❌ Error deleting user ${userId}:`, error);
+      throw new BadRequestException('Failed to delete account');
+    }
   }
 }

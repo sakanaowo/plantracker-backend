@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { activity_action, entity_type, Prisma } from '@prisma/client';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 interface BaseLogParams {
   workspaceId?: string;
@@ -20,7 +21,11 @@ interface BaseLogParams {
 
 @Injectable()
 export class ActivityLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => NotificationsGateway))
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   /**
    * Generic method to create activity log
@@ -43,10 +48,48 @@ export class ActivityLogsService {
           new_value: data.newValue ?? null,
           metadata: data.metadata ?? null,
         },
+        include: {
+          users: {
+            select: {
+              id: true,
+              name: true,
+              avatar_url: true,
+            },
+          },
+        },
       });
+
       console.log(
         `✅ Activity log created: ${data.action} ${data.entityType} by ${data.userId}`,
       );
+
+      // 🔔 Emit WebSocket event to project members for real-time activity feed update
+      if (data.projectId) {
+        try {
+          // Get all project members
+          const projectMembers = await this.prisma.project_members.findMany({
+            where: { project_id: data.projectId },
+            select: { user_id: true },
+          });
+
+          const memberIds = projectMembers.map((pm) => pm.user_id);
+
+          console.log(
+            `📡 [ActivityLog] Emitting to ${memberIds.length} project members`,
+          );
+
+          // Emit to each member's activity feed
+          for (const memberId of memberIds) {
+            this.notificationsGateway.emitToUser(memberId, 'activity_log', {
+              ...result,
+              users: result.users,
+            });
+          }
+        } catch (error) {
+          console.error('❌ Failed to emit activity log via WebSocket:', error);
+        }
+      }
+
       return result;
     } catch (error) {
       console.error('❌ Failed to create activity log:', error);
@@ -170,6 +213,7 @@ export class ActivityLogsService {
     taskId: string;
     userId: string;
     taskTitle: string;
+    projectName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -181,6 +225,9 @@ export class ActivityLogsService {
       entityType: 'TASK',
       entityId: params.taskId,
       entityName: params.taskTitle,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 
@@ -431,12 +478,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistChecked(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -448,12 +501,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistUnchecked(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -465,6 +524,9 @@ export class ActivityLogsService {
   }
 
   async logChecklistUpdated(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
@@ -472,6 +534,9 @@ export class ActivityLogsService {
     newContent: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -485,12 +550,18 @@ export class ActivityLogsService {
   }
 
   async logChecklistDeleted(params: {
+    workspaceId?: string;
+    projectId?: string;
+    boardId?: string;
     taskId: string;
     checklistItemId: string;
     userId: string;
     content: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      boardId: params.boardId,
       taskId: params.taskId,
       checklistItemId: params.checklistItemId,
       userId: params.userId,
@@ -525,6 +596,7 @@ export class ActivityLogsService {
   }
 
   async logProjectUpdated(params: {
+    workspaceId?: string;
     projectId: string;
     userId: string;
     projectName?: string;
@@ -532,6 +604,7 @@ export class ActivityLogsService {
     newValue: any;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
@@ -540,6 +613,23 @@ export class ActivityLogsService {
       entityName: params.projectName,
       oldValue: params.oldValue,
       newValue: params.newValue,
+    });
+  }
+
+  async logProjectDeleted(params: {
+    workspaceId: string;
+    projectId: string;
+    userId: string;
+    projectName: string;
+  }) {
+    return this.log({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      userId: params.userId,
+      action: 'DELETED',
+      entityType: 'PROJECT',
+      entityId: params.projectId,
+      entityName: params.projectName,
     });
   }
 
@@ -582,10 +672,14 @@ export class ActivityLogsService {
       userId: params.userId,
       action: 'ADDED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
-      entityName: params.memberName,
-      newValue: params.projectName,
-      metadata: { role: params.role, ...params.metadata },
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
+      entityName: params.projectName, // ✅ PROJECT NAME (what was joined)
+      metadata: {
+        role: params.role,
+        memberId: params.memberId,
+        memberName: params.memberName, // ✅ WHO joined (moved from entityName)
+        ...params.metadata,
+      }, // Store memberId in metadata instead
     });
   }
 
@@ -596,16 +690,23 @@ export class ActivityLogsService {
     memberName: string;
     oldRole: string;
     newRole: string;
+    projectName?: string;
+    workspaceId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
-      entityName: params.memberName,
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
+      entityName: params.projectName, // ✅ PROJECT NAME
       oldValue: { role: params.oldRole },
       newValue: { role: params.newRole },
+      metadata: {
+        memberId: params.memberId,
+        memberName: params.memberName, // ✅ WHO got role change
+      },
     });
   }
 
@@ -615,15 +716,22 @@ export class ActivityLogsService {
     memberId: string;
     memberName: string;
     role: string;
+    projectName?: string;
+    workspaceId?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'REMOVED',
       entityType: 'MEMBERSHIP',
-      entityId: params.memberId,
-      entityName: params.memberName,
-      metadata: { role: params.role },
+      // entityId omitted: memberId is Firebase UID, incompatible with UUID column
+      entityName: params.projectName, // ✅ PROJECT NAME (what they left/were removed from)
+      metadata: {
+        role: params.role,
+        memberId: params.memberId,
+        memberName: params.memberName, // ✅ WHO left or was removed
+      },
     });
   }
 
@@ -744,22 +852,19 @@ export class ActivityLogsService {
     return this.prisma.activity_logs.findMany({
       where: {
         OR: [
-          // Logs where user is the actor (performed the action)
+          // ✅ Logs where user is the actor (performed the action)
+          // Example: User creates a task, comments, assigns, etc.
           { user_id: userId },
-          // Logs from projects where user is a member (team activities)
+
+          // ✅ Logs from projects where user is a member (team activities)
+          // This covers ALL project activities including:
+          // - MEMBERSHIP logs when user joins (ADDED) or leaves (REMOVED) project
+          // - Tasks created/updated by other members
+          // - Comments, assignments, moves by team members
+          // - Board/sprint changes, etc.
           ...(projectIds.length > 0
             ? [{ project_id: { in: projectIds } }]
             : []),
-          // ✅ FIX: Logs where user is affected (e.g., invitation accepted - user becomes member)
-          // When invitation is accepted, activity log is created with:
-          // - action: 'ADDED', entityType: 'MEMBERSHIP'
-          // - entityId: memberId (the person who joined)
-          // - userId: memberId (the person who joined)
-          // So we need to find logs where entityType=MEMBERSHIP and entityId=userId
-          {
-            entity_type: 'MEMBERSHIP' as const,
-            entity_id: userId, // Find logs where this user is the affected member
-          },
         ],
       },
       include: {
@@ -768,6 +873,12 @@ export class ActivityLogsService {
             id: true,
             name: true,
             avatar_url: true,
+          },
+        },
+        projects: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },
@@ -836,6 +947,7 @@ export class ActivityLogsService {
    * Log when an event is created in a project
    */
   async logEventCreated(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
@@ -843,8 +955,10 @@ export class ActivityLogsService {
     eventType: 'MEETING' | 'MILESTONE' | 'OTHER';
     startAt: Date;
     endAt: Date;
+    projectName?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'CREATED',
@@ -855,6 +969,7 @@ export class ActivityLogsService {
         type: params.eventType,
         startAt: params.startAt,
         endAt: params.endAt,
+        projectName: params.projectName,
       },
     });
   }
@@ -863,14 +978,17 @@ export class ActivityLogsService {
    * Log when an event is updated
    */
   async logEventUpdated(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
     eventTitle: string;
     oldValue?: any;
     newValue?: any;
+    projectName?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'UPDATED',
@@ -879,6 +997,9 @@ export class ActivityLogsService {
       entityName: params.eventTitle,
       oldValue: params.oldValue,
       newValue: params.newValue,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 
@@ -886,18 +1007,24 @@ export class ActivityLogsService {
    * Log when an event is deleted from a project
    */
   async logEventDeleted(params: {
+    workspaceId?: string;
     projectId: string;
     eventId: string;
     userId: string;
     eventTitle: string;
+    projectName?: string;
   }) {
     return this.log({
+      workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: params.userId,
       action: 'DELETED',
       entityType: 'EVENT',
       entityId: params.eventId,
       entityName: params.eventTitle,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 

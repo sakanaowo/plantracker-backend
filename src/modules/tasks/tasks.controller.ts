@@ -9,6 +9,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -19,8 +20,10 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { tasks } from '@prisma/client';
 import { CurrentUser } from '../../auth/current-user.decorator';
+import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 
 @Controller('tasks')
+@UseGuards(CombinedAuthGuard)
 export class TasksController {
   constructor(private readonly svc: TasksService) {}
 
@@ -43,9 +46,52 @@ export class TasksController {
     return this.svc.getQuickTaskDefaults(userId);
   }
 
+  @Get('my-assigned')
+  async getMyAssignedTasksInProject(
+    @Query('projectId', new ParseUUIDPipe()) projectId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks[]> {
+    return this.svc.getMyAssignedTasksInProject(userId, projectId);
+  }
+
+  @Get('project/:projectId/all')
+  async getAllTasksInProject(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+  ): Promise<tasks[]> {
+    return this.svc.getAllTasksInProject(projectId);
+  }
+
+  @Get('project/:projectId/statistics')
+  async getAllWorkStatistics(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+  ) {
+    return this.svc.getAllWorkStatistics(projectId);
+  }
+
+  // TODO [TONIGHT]: Test calendar view with FE
+  // - Filter tasks by date range
+  // - Check calendar_event_id is returned
+  // - Verify tasks show in FE calendar view
+  @Get('calendar')
+  async getTasksForCalendar(
+    @Query('projectId') projectId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    console.log('📅 Calendar request:', { projectId, startDate, endDate });
+    return this.svc.getTasksForCalendar(
+      projectId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
   @Get(':id')
-  get(@Param('id', new ParseUUIDPipe()) id: string): Promise<tasks | null> {
-    return this.svc.getById(id);
+  get(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<tasks | null> {
+    return this.svc.getById(id, userId);
   }
 
   @Post()
@@ -205,31 +251,34 @@ export class TasksController {
     });
 
     console.log('\n✅ [CALENDAR-SYNC-CONTROLLER] Response:');
+    console.log('  task_calendar_sync_users:', result.task_calendar_sync_users);
     console.log(
-      '  calendar_reminder_enabled:',
-      result.calendar_reminder_enabled,
+      '  User synced:',
+      result.task_calendar_sync_users?.includes(userId),
     );
-    console.log('  calendar_reminder_time:', result.calendar_reminder_time);
-    console.log('  calendar_event_id:', result.calendar_event_id);
-    console.log('  last_synced_at:', result.last_synced_at);
 
     return result;
   }
 
-  // TODO [TONIGHT]: Test calendar view with FE
-  // - Filter tasks by date range
-  // - Check calendar_event_id is returned
-  // - Verify tasks show in FE calendar view
-  @Get('calendar')
-  async getTasksForCalendar(
-    @Query('projectId') projectId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+  // ==================== UNSYNC CALENDAR ====================
+  @Delete(':id/calendar-sync')
+  async unsyncCalendar(
+    @Param('id', new ParseUUIDPipe()) taskId: string,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.svc.getTasksForCalendar(
-      projectId,
-      new Date(startDate),
-      new Date(endDate),
+    console.log('\n🔴 [CALENDAR-UNSYNC-CONTROLLER] Removing calendar sync:');
+    console.log('  User ID:', userId);
+    console.log('  Task ID:', taskId);
+
+    const result = await this.svc.unsyncTaskFromCalendar(userId, taskId);
+
+    console.log('\n✅ [CALENDAR-UNSYNC-CONTROLLER] User removed from sync');
+    console.log('  task_calendar_sync_users:', result.task_calendar_sync_users);
+    console.log(
+      '  Remaining synced users:',
+      result.task_calendar_sync_users?.length,
     );
+
+    return result;
   }
 }

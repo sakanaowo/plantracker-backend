@@ -3,62 +3,31 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as os from 'os';
+
+function getLocalIP(): string {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    const ifaces = interfaces[name];
+    if (!ifaces) continue;
+
+    for (const iface of ifaces) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
 
 async function bootstrap() {
-  // Debug: DEEP check Prisma Client generated files
-  const prismaClientDir = path.join(
-    process.cwd(),
-    'node_modules',
-    '.prisma',
-    'client',
-  );
-
-  console.log('🔍 PRISMA CLIENT DEEP CHECK:');
-  console.log('  Client dir exists:', fs.existsSync(prismaClientDir));
-
-  // Check schema.prisma
-  const prismaSchemaPath = path.join(prismaClientDir, 'schema.prisma');
-  if (fs.existsSync(prismaSchemaPath)) {
-    const schemaContent = fs.readFileSync(prismaSchemaPath, 'utf-8');
-    const userIdMatch = schemaContent.match(
-      /model project_members[\s\S]*?user_id\s+(\S+)/,
-    );
-    console.log(
-      '  schema.prisma user_id type:',
-      userIdMatch?.[1] || 'NOT FOUND',
-    );
-  }
-
-  // Check index.d.ts (TypeScript types)
-  const indexDtsPath = path.join(prismaClientDir, 'index.d.ts');
-  if (fs.existsSync(indexDtsPath)) {
-    const dtsContent = fs.readFileSync(indexDtsPath, 'utf-8');
-    const userIdTypeMatch = dtsContent.match(
-      /project_members[\s\S]{0,500}user_id:\s*(\S+)/,
-    );
-    console.log(
-      '  index.d.ts user_id type:',
-      userIdTypeMatch?.[1] || 'NOT FOUND',
-    );
-  }
-
-  // Check all files modified time
-  if (fs.existsSync(prismaClientDir)) {
-    const files = fs.readdirSync(prismaClientDir);
-    const stats = files.slice(0, 5).map((f) => {
-      const stat = fs.statSync(path.join(prismaClientDir, f));
-      return `${f}: ${stat.mtime.toISOString()}`;
-    });
-    console.log('  Recent files:\n   ', stats.join('\n    '));
-  }
-
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
+  const isLocal = process.env.LOCAL === 'true';
   app.enableCors({
-    origin: ['http://localhost:3000'],
+    origin: isLocal ? '*' : ['http://localhost:3000'],
     credentials: true,
   });
 
@@ -89,10 +58,20 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
 
-  console.log(`Application is running on: http://localhost:${port}/api`);
-  console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
+  if (isLocal) {
+    await app.listen(port, '0.0.0.0');
+    const localIP = getLocalIP();
+    console.log(`Application is running on:`);
+    console.log(`  Local:   http://localhost:${port}/api`);
+    console.log(`  Network: http://${localIP}:${port}/api`);
+    console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
+  } else {
+    // Production: bind to default host (localhost) for security
+    await app.listen(port);
+    console.log(`Application is running on: http://localhost:${port}/api`);
+    console.log(`Swagger docs available at: http://localhost:${port}/api/docs`);
+  }
 }
 
 bootstrap().catch((error) => {

@@ -2,23 +2,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google, calendar_v3 } from 'googleapis';
 import { PrismaService } from '../../prisma/prisma.service';
 
-/**
- * TODO [TONIGHT TESTING]:
- * 1. Test OAuth flow with real Google account
- * 2. Test calendar event creation/update/delete
- * 3. Test Google Meet link generation
- * 4. Test token refresh when expired
- * 5. Verify calendar sync works end-to-end with FE
- *
- * IMPORTANT: Current tests use MOCK OAuth - real API needs to be tested!
- */
 @Injectable()
 export class GoogleCalendarService {
   private readonly logger = new Logger(GoogleCalendarService.name);
@@ -28,7 +17,32 @@ export class GoogleCalendarService {
     private prisma: PrismaService,
   ) {}
 
-  // TODO [TONIGHT]: Test with real Google OAuth - get actual auth URL
+  /**
+   * Format datetime for Google Calendar API
+   * Google Calendar requires local datetime WITHOUT timezone suffix (no Z)
+   * when using the timeZone field. If dateTime has Z, timeZone is ignored.
+   *
+   * IMPORTANT: Convert UTC to Vietnam timezone (GMT+7) before formatting!
+   * Android sends: "2024-12-04T16:00:00Z" (UTC 16h = VN 23h)
+   * Backend receives: new Date("2024-12-04T16:00:00Z") = UTC 16h
+   * Must convert to VN: UTC 16h + 7h = VN 23h
+   * Then format: "2024-12-04T23:00:00" + timeZone: "Asia/Ho_Chi_Minh" = VN 23h ✅
+   */
+  private formatLocalDateTime(date: Date): string {
+    // Convert UTC to Vietnam timezone (GMT+7)
+    const vnTime = new Date(
+      date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }),
+    );
+
+    const year = vnTime.getFullYear();
+    const month = String(vnTime.getMonth() + 1).padStart(2, '0');
+    const day = String(vnTime.getDate()).padStart(2, '0');
+    const hours = String(vnTime.getHours()).padStart(2, '0');
+    const minutes = String(vnTime.getMinutes()).padStart(2, '0');
+    const seconds = String(vnTime.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  }
+
   async getAuthUrl(userId: string): Promise<string> {
     const oauth2Client = this.createOAuth2Client();
 
@@ -144,12 +158,12 @@ export class GoogleCalendarService {
         requestBody: {
           summary: event.title,
           start: {
-            dateTime: event.start_at.toISOString(),
-            timeZone: 'UTC',
+            dateTime: this.formatLocalDateTime(event.start_at),
+            timeZone: 'Asia/Ho_Chi_Minh',
           },
           end: {
-            dateTime: event.end_at.toISOString(),
-            timeZone: 'UTC',
+            dateTime: this.formatLocalDateTime(event.end_at),
+            timeZone: 'Asia/Ho_Chi_Minh',
           },
           location: event.location || undefined,
           description: 'Created from PlanTracker',
@@ -362,10 +376,6 @@ export class GoogleCalendarService {
 
   /**
    * Create task reminder event in Google Calendar
-   * TODO [TONIGHT]: Test creating real task reminder in Google Calendar
-   * - Check event appears in user's calendar
-   * - Verify 15-minute duration and red color
-   * - Test with different reminderMinutes (15, 30, 60)
    */
   async createTaskReminderEvent(
     userId: string,
@@ -374,31 +384,17 @@ export class GoogleCalendarService {
     dueDate: Date,
     reminderMinutes: number,
   ): Promise<string | null> {
-    console.log('\n🟡 [CALENDAR-SERVICE] createTaskReminderEvent called');
-    console.log('  User ID:', userId);
-    console.log('  Task ID:', taskId);
-    console.log('  Title:', title);
-    console.log('  Due Date:', dueDate);
-    console.log('  Reminder Minutes:', reminderMinutes);
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
-      console.log(
-        '❌ [CALENDAR-SERVICE] No calendar client - user not connected',
-      );
       this.logger.warn(`No calendar client for user ${userId}`);
       return null;
     }
-
-    console.log('✅ [CALENDAR-SERVICE] Calendar client obtained');
 
     try {
       const reminderTime = new Date(
         dueDate.getTime() - reminderMinutes * 60000,
       );
       const reminderEndTime = new Date(reminderTime.getTime() + 15 * 60000);
-
-      console.log('  Creating event at:', reminderTime.toISOString());
 
       const googleEvent: calendar_v3.Schema$Event = (
         await calendar.events.insert({
@@ -407,11 +403,11 @@ export class GoogleCalendarService {
             summary: `⏰ Nhắc nhở: ${title}`,
             description: `Đây là nhắc nhở cho task: ${title}\n\nTask ID: ${taskId}`,
             start: {
-              dateTime: reminderTime.toISOString(),
+              dateTime: this.formatLocalDateTime(reminderTime),
               timeZone: 'Asia/Ho_Chi_Minh',
             },
             end: {
-              dateTime: reminderEndTime.toISOString(),
+              dateTime: this.formatLocalDateTime(reminderEndTime),
               timeZone: 'Asia/Ho_Chi_Minh',
             },
             reminders: {
@@ -426,14 +422,9 @@ export class GoogleCalendarService {
         })
       ).data;
 
-      console.log('✅ [CALENDAR-SERVICE] Event created successfully!');
-      console.log('  Event ID:', googleEvent.id);
       this.logger.log(`Created task reminder event: ${googleEvent.id}`);
       return googleEvent.id || null;
     } catch (error) {
-      console.log('❌ [CALENDAR-SERVICE] Failed to create event');
-      console.log('  Error:', error.message);
-      console.log('  Full error:', error);
       this.logger.error(`Failed to create task reminder: ${error.message}`);
       return null;
     }
@@ -467,11 +458,11 @@ export class GoogleCalendarService {
         requestBody: {
           summary: `⏰ Nhắc nhở: ${title}`,
           start: {
-            dateTime: reminderTime.toISOString(),
+            dateTime: this.formatLocalDateTime(reminderTime),
             timeZone: 'Asia/Ho_Chi_Minh',
           },
           end: {
-            dateTime: reminderEndTime.toISOString(),
+            dateTime: this.formatLocalDateTime(reminderEndTime),
             timeZone: 'Asia/Ho_Chi_Minh',
           },
         },
@@ -514,11 +505,6 @@ export class GoogleCalendarService {
 
   /**
    * Create project event with optional Google Meet link
-   * TODO [TONIGHT]: Test creating project event with real Google Meet
-   * - Verify Google Meet link is generated correctly
-   * - Check attendees receive calendar invites
-   * - Test event appears in all attendees' calendars
-   * - Verify event details (title, description, time, duration)
    */
   async createProjectEventInGoogle(
     userId: string,
@@ -542,11 +528,11 @@ export class GoogleCalendarService {
         summary: eventData.title,
         description: eventData.description,
         start: {
-          dateTime: eventData.startAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.startAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         },
         end: {
-          dateTime: eventData.endAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.endAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         },
         attendees: eventData.attendeeEmails.map((email) => ({
@@ -594,7 +580,7 @@ export class GoogleCalendarService {
         meetLink: meetLink || null,
       };
     } catch (error) {
-      this.logger.error(`Failed to create project event: ${error.message}`);
+      this.logger.warn(`Failed to create project event: ${error.message}`);
       return { calendarEventId: null, meetLink: null };
     }
   }
@@ -633,11 +619,11 @@ export class GoogleCalendarService {
 
       if (eventData.startAt && eventData.endAt) {
         updates.start = {
-          dateTime: eventData.startAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.startAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         };
         updates.end = {
-          dateTime: eventData.endAt.toISOString(),
+          dateTime: this.formatLocalDateTime(eventData.endAt),
           timeZone: 'Asia/Ho_Chi_Minh',
         };
       }

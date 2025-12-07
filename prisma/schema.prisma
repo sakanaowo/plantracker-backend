@@ -17,18 +17,18 @@ model activity_logs {
   user_id           String
   action            activity_action
   entity_type       entity_type
-  entity_id         String?          @db.Uuid
+  entity_id         String? // Changed from @db.Uuid to TEXT - supports both UUID and Firebase UID (for MEMBERSHIP)
   entity_name       String?
   old_value         Json?
   new_value         Json?
   metadata          Json?
   created_at        DateTime         @default(now()) @db.Timestamptz(6)
   boards            boards?          @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  checklist_items   checklist_items? @relation(fields: [checklist_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   projects          projects?        @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tasks             tasks?           @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users             users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   workspaces        workspaces?      @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  checklist_items   checklist_items? @relation(fields: [checklist_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([board_id, created_at], map: "idx_activity_board")
   @@index([project_id, created_at], map: "idx_activity_project")
@@ -71,8 +71,8 @@ model checklist_items {
   is_done       Boolean         @default(false)
   position      Decimal         @default(0) @db.Decimal(10, 3)
   created_at    DateTime        @default(now()) @db.Timestamptz(6)
-  checklists    checklists      @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   activity_logs activity_logs[]
+  checklists    checklists      @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([checklist_id, position], map: "idx_checklist_items_order")
 }
@@ -101,25 +101,31 @@ model email_queue {
 }
 
 model events {
-  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id         String               @db.Uuid
-  title              String
-  description        String?
-  start_at           DateTime             @db.Timestamptz(6)
-  end_at             DateTime             @db.Timestamptz(6)
-  location           String?
-  meet_link          String?
-  event_type         event_type           @default(OTHER)
-  recurrence         recurrence_type      @default(NONE)
-  created_by         String?
-  created_at         DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
-  users              users?               @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  projects           projects             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  external_event_map external_event_map[]
-  participants       participants[]
+  id                  String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id          String               @db.Uuid
+  title               String
+  description         String?
+  start_at            DateTime             @db.Timestamptz(6)
+  end_at              DateTime             @db.Timestamptz(6)
+  location            String?
+  meet_link           String?
+  event_type          event_type           @default(OTHER)
+  recurrence          recurrence_type      @default(NONE)
+  status              event_status         @default(ACTIVE)
+  cancelled_at        DateTime?            @db.Timestamptz(6)
+  cancelled_by        String?
+  cancellation_reason String?
+  created_by          String?
+  created_at          DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime             @default(now()) @db.Timestamptz(6)
+  users               users?               @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  projects            projects             @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event_reminders     event_reminders[]
+  external_event_map  external_event_map[]
+  participants        participants[]
 
   @@index([project_id, start_at], map: "idx_events_project_start")
+  @@index([status, start_at], map: "idx_events_status_start")
 }
 
 model external_event_map {
@@ -231,6 +237,43 @@ model participants {
   @@unique([event_id, email])
 }
 
+model event_reminders {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  event_id     String    @db.Uuid
+  recipient_id String
+  sender_id    String
+  message      String?
+  is_read      Boolean   @default(false)
+  dismissed_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  events       events    @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipient    users     @relation("event_reminders_recipient", fields: [recipient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sender       users     @relation("event_reminders_sender", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([recipient_id, is_read, dismissed_at], map: "idx_event_reminders_recipient")
+  @@index([event_id], map: "idx_event_reminders_event")
+}
+
+model project_invitations {
+  id                                          String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  project_id                                  String            @db.Uuid
+  user_id                                     String
+  role                                        project_role      @default(MEMBER)
+  status                                      invitation_status @default(PENDING)
+  invited_by                                  String
+  expires_at                                  DateTime          @db.Timestamptz(6)
+  created_at                                  DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                  DateTime          @default(now()) @db.Timestamptz(6)
+  users_project_invitations_invited_byTousers users             @relation("project_invitations_invited_byTousers", fields: [invited_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  projects                                    projects          @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_project_invitations_user_idTousers    users             @relation("project_invitations_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, user_id])
+  @@index([expires_at], map: "idx_project_invitations_expires")
+  @@index([status], map: "idx_project_invitations_status")
+  @@index([user_id], map: "idx_project_invitations_user")
+}
+
 model project_members {
   id         String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   project_id String       @db.Uuid
@@ -244,26 +287,6 @@ model project_members {
   @@unique([project_id, user_id])
   @@index([project_id], map: "idx_project_members_project")
   @@index([user_id], map: "idx_project_members_user")
-}
-
-model project_invitations {
-  id         String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  project_id String            @db.Uuid
-  user_id    String
-  role       project_role      @default(MEMBER)
-  status     invitation_status @default(PENDING)
-  invited_by String
-  expires_at DateTime          @db.Timestamptz(6)
-  created_at DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at DateTime          @default(now()) @db.Timestamptz(6)
-  projects   projects          @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users      users             @relation("InviteeInvitations", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  inviter    users             @relation("InviterInvitations", fields: [invited_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([project_id, user_id])
-  @@index([user_id], map: "idx_project_invitations_user")
-  @@index([status], map: "idx_project_invitations_status")
-  @@index([expires_at], map: "idx_project_invitations_expires")
 }
 
 model projects {
@@ -281,8 +304,8 @@ model projects {
   boards              boards[]
   events              events[]
   labels              labels[]
-  project_members     project_members[]
   project_invitations project_invitations[]
+  project_members     project_members[]
   workspaces          workspaces            @relation(fields: [workspace_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   sprints             sprints[]
   tasks               tasks[]
@@ -302,6 +325,19 @@ model sprints {
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   projects   projects  @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tasks      tasks[]
+}
+
+model task_assignees {
+  task_id     String   @db.Uuid
+  user_id     String
+  assigned_at DateTime @default(now()) @db.Timestamptz(6)
+  assigned_by String?
+  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([task_id, user_id])
+  @@index([task_id], map: "idx_task_assignees_task")
+  @@index([user_id], map: "idx_task_assignees_user")
 }
 
 model task_comments {
@@ -325,19 +361,6 @@ model task_labels {
   @@id([task_id, label_id])
 }
 
-model task_assignees {
-  task_id     String   @db.Uuid
-  user_id     String
-  assigned_at DateTime @default(now()) @db.Timestamptz(6)
-  assigned_by String?
-  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([task_id, user_id])
-  @@index([task_id], map: "idx_task_assignees_task")
-  @@index([user_id], map: "idx_task_assignees_user")
-}
-
 model tasks {
   id                                            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   project_id                                    String           @db.Uuid
@@ -358,11 +381,7 @@ model tasks {
   story_points                                  Int?
   original_estimate_sec                         Int?
   remaining_estimate_sec                        Int?
-  // Calendar integration fields
-  calendar_event_id                             String? // Google Calendar Event ID (not UUID)
-  calendar_reminder_enabled                     Boolean          @default(false)
-  calendar_reminder_time                        Int? // minutes before due_at
-  last_synced_at                                DateTime?        @db.Timestamptz(6)
+  task_calendar_sync_users                      String[]         @default([])
   created_at                                    DateTime         @default(now()) @db.Timestamptz(6)
   updated_at                                    DateTime         @default(now()) @db.Timestamptz(6)
   deleted_at                                    DateTime?        @db.Timestamptz(6)
@@ -371,16 +390,16 @@ model tasks {
   checklists                                    checklists[]
   issue_links_issue_links_source_task_idTotasks issue_links[]    @relation("issue_links_source_task_idTotasks")
   issue_links_issue_links_target_task_idTotasks issue_links[]    @relation("issue_links_target_task_idTotasks")
+  task_assignees                                task_assignees[]
   task_comments                                 task_comments[]
   task_labels                                   task_labels[]
-  task_assignees                                task_assignees[]
   tasks_tasks_epic_idTotasks                    tasks?           @relation("tasks_epic_idTotasks", fields: [epic_id], references: [id], onUpdate: NoAction, map: "fk_tasks_epic")
   other_tasks_tasks_epic_idTotasks              tasks[]          @relation("tasks_epic_idTotasks")
   tasks_tasks_parent_task_idTotasks             tasks?           @relation("tasks_parent_task_idTotasks", fields: [parent_task_id], references: [id], onUpdate: NoAction, map: "fk_tasks_parent")
   other_tasks_tasks_parent_task_idTotasks       tasks[]          @relation("tasks_parent_task_idTotasks")
   sprints                                       sprints?         @relation(fields: [sprint_id], references: [id], onUpdate: NoAction, map: "fk_tasks_sprint")
   boards                                        boards           @relation(fields: [board_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_tasks_created_byTousers                 users?           @relation("tasks_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  users                                         users?           @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   projects                                      projects         @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   time_entries                                  time_entries[]
   watchers                                      watchers[]
@@ -422,29 +441,35 @@ model user_devices {
 }
 
 model users {
-  id                            String                @id
-  name                          String
-  email                         String                @unique
-  password_hash                 String
-  avatar_url                    String?
-  created_at                    DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at                    DateTime              @default(now()) @db.Timestamptz(6)
-  activity_logs                 activity_logs[]
-  events                        events[]
-  integration_tokens            integration_tokens[]
-  memberships                   memberships[]
-  notifications                 notifications[]
-  participants                  participants[]
-  project_members               project_members[]
-  project_invitations_invitee   project_invitations[] @relation("InviteeInvitations")
-  project_invitations_inviter   project_invitations[] @relation("InviterInvitations")
-  task_comments                 task_comments[]
-  task_assignees                task_assignees[]
-  tasks_tasks_created_byTousers tasks[]               @relation("tasks_created_byTousers")
-  time_entries                  time_entries[]
-  user_devices                  user_devices[]
-  watchers                      watchers[]
-  workspaces                    workspaces[]
+  id                                                        String                @id
+  name                                                      String
+  email                                                     String                @unique
+  password_hash                                             String
+  avatar_url                                                String?
+  bio                                                       String?
+  job_title                                                 String?
+  phone_number                                              String?
+  last_seen_at                                              DateTime?             @db.Timestamptz(6)
+  created_at                                                DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                                                DateTime              @default(now()) @db.Timestamptz(6)
+  activity_logs                                             activity_logs[]
+  event_reminders_received                                  event_reminders[]     @relation("event_reminders_recipient")
+  event_reminders_sent                                      event_reminders[]     @relation("event_reminders_sender")
+  events                                                    events[]
+  integration_tokens                                        integration_tokens[]
+  memberships                                               memberships[]
+  notifications                                             notifications[]
+  participants                                              participants[]
+  project_invitations_project_invitations_invited_byTousers project_invitations[] @relation("project_invitations_invited_byTousers")
+  project_invitations_project_invitations_user_idTousers    project_invitations[] @relation("project_invitations_user_idTousers")
+  project_members                                           project_members[]
+  task_assignees                                            task_assignees[]
+  task_comments                                             task_comments[]
+  tasks                                                     tasks[]
+  time_entries                                              time_entries[]
+  user_devices                                              user_devices[]
+  watchers                                                  watchers[]
+  workspaces                                                workspaces[]
 }
 
 model watchers {
@@ -512,6 +537,25 @@ enum entity_type {
   MEMBERSHIP
 }
 
+enum event_status {
+  ACTIVE
+  CANCELLED
+  COMPLETED
+}
+
+enum event_type {
+  MEETING
+  MILESTONE
+  OTHER
+}
+
+enum invitation_status {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
 enum issue_link_type {
   BLOCKS
   IS_BLOCKED_BY
@@ -558,13 +602,13 @@ enum notification_status {
 enum notification_type {
   TASK_ASSIGNED
   TASK_MOVED
-  TASK_COMMENT
-  PROJECT_INVITE
   TIME_REMINDER
   EVENT_INVITE
   EVENT_UPDATED
   MEETING_REMINDER
   SYSTEM
+  TASK_COMMENT
+  PROJECT_INVITE
 }
 
 enum participant_status {
@@ -586,11 +630,6 @@ enum priority {
   HIGH
 }
 
-enum project_type {
-  PERSONAL
-  TEAM
-}
-
 enum project_role {
   OWNER
   ADMIN
@@ -598,11 +637,9 @@ enum project_role {
   VIEWER
 }
 
-enum invitation_status {
-  PENDING
-  ACCEPTED
-  DECLINED
-  EXPIRED
+enum project_type {
+  PERSONAL
+  TEAM
 }
 
 enum provider {
@@ -610,6 +647,14 @@ enum provider {
   OUTLOOK
   ZOOM
   SLACK
+}
+
+enum recurrence_type {
+  NONE
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
 }
 
 enum role {
@@ -622,18 +667,4 @@ enum token_status {
   ACTIVE
   REVOKED
   EXPIRED
-}
-
-enum event_type {
-  MEETING
-  MILESTONE
-  OTHER
-}
-
-enum recurrence_type {
-  NONE
-  DAILY
-  WEEKLY
-  BIWEEKLY
-  MONTHLY
 }

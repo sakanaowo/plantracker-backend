@@ -118,7 +118,14 @@ export class ProjectsService {
     }
 
     console.log(`✅ Found project: ${project.name}`);
-    return project;
+
+    // Add current user's role to the response for easier frontend handling
+    const currentUserRole = project.project_members[0]?.role || null;
+
+    return {
+      ...project,
+      currentUserRole, // null if workspace owner but not project member
+    };
   }
 
   listByWorkSpace(workspaceId: string, userId: string): Promise<projects[]> {
@@ -224,6 +231,8 @@ export class ProjectsService {
   }
 
   async create(dto: CreateProjectDto, createdBy?: string): Promise<projects> {
+    console.log(`🔧 create() called - createdBy: ${createdBy}, dto:`, dto);
+
     // ✅ Auto-find user's default workspace if workspaceId not provided
     let workspaceId = dto.workspaceId;
 
@@ -327,6 +336,9 @@ export class ProjectsService {
       // ✅ Always create project_member record for creator with OWNER role
       // This is needed for both PERSONAL and TEAM projects
       if (createdBy) {
+        console.log(
+          `✅ Adding creator ${createdBy} as OWNER to project ${newProject.id}`,
+        );
         await tx.project_members.create({
           data: {
             project_id: newProject.id,
@@ -335,6 +347,10 @@ export class ProjectsService {
             added_by: createdBy,
           },
         });
+      } else {
+        console.warn(
+          `⚠️ WARNING: createdBy is ${createdBy}, NOT adding to project_members!`,
+        );
       }
 
       return newProject;
@@ -581,5 +597,303 @@ export class ProjectsService {
         done: statusCounts.DONE,
       },
     };
+  }
+
+  /**
+   * Leave project - for members to remove themselves
+   * Cannot leave if you are the last owner
+   */
+  async leaveProject(projectId: string, userId: string) {
+    console.log(`👋 User ${userId} leaving project ${projectId}`);
+
+    // Get project member with project details
+    const member = await this.prisma.project_members.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: userId,
+      },
+      include: {
+        users: true,
+        projects: {
+          select: {
+            id: true,
+            name: true,
+            workspace_id: true,
+          },
+        },
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException('You are not a member of this project');
+    }
+
+    // Prevent last owner from leaving
+    if (member.role === 'OWNER') {
+      const ownerCount = await this.prisma.project_members.count({
+        where: {
+          project_id: projectId,
+          role: 'OWNER',
+        },
+      });
+
+      if (ownerCount <= 1) {
+        throw new BadRequestException(
+          'Cannot leave project as the last owner. Please transfer ownership or delete the project.',
+        );
+      }
+    }
+
+    try {
+      // Remove user from project
+      await this.prisma.project_members.delete({
+        where: { id: member.id },
+      });
+
+      // ✅ Log activity - user left project themselves
+      await this.activityLogsService.logMemberRemoved({
+        projectId,
+        workspaceId: member.projects.workspace_id,
+        userId, // Who left (same as memberId for self-leave)
+        memberId: userId,
+        memberName: member.users.name,
+        role: member.role,
+        projectName: member.projects.name,
+      });
+
+      console.log(`✅ User ${userId} left project ${projectId}`);
+
+      return {
+        message: 'Successfully left the project',
+        projectId,
+      };
+    } catch (error) {
+      console.error(`❌ Error leaving project:`, error);
+      throw new BadRequestException('Failed to leave project');
+    }
+  }
+
+  /**
+   * Delete project by ID
+   * Only project OWNER can delete (stricter than before)
+   */
+  async deleteProject(projectId: string, userId: string) {
+    console.log(`🗑️ Deleting project ${projectId} by user ${userId}`);
+
+    // Get project with workspace info and user's role
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      include: {
+        workspaces: true,
+        project_members: {
+          where: { user_id: userId },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // Check permission: must be project OWNER (not just admin)
+    const projectRole = project.project_members[0]?.role;
+    const isProjectOwner = projectRole === 'OWNER';
+
+    if (!isProjectOwner) {
+      throw new ForbiddenException(
+        'Only project owner can delete this project',
+      );
+    }
+
+    try {
+      // ✅ Log BEFORE deletion (so we can still access project data)
+      await this.activityLogsService.logProjectDeleted({
+        workspaceId: project.workspace_id,
+        projectId,
+        userId,
+        projectName: project.name,
+      });
+
+      // Delete project (cascade will handle related data)
+      await this.prisma.projects.delete({
+        where: { id: projectId },
+      });
+
+      console.log(`✅ Successfully deleted project: ${projectId}`);
+
+      return { message: 'Project deleted successfully' };
+    } catch (error) {
+      console.error(`❌ Error deleting project ${projectId}:`, error);
+      throw new BadRequestException('Failed to delete project');
+    }
+  }
+
+  /**
+   * Get calendar data for a project (tasks and events for a specific month)
+   * Returns all tasks/events in the month + list of dates that have items
+   */
+  async getCalendarData(projectId: string, month: string, userId: string) {
+    console.log(`📅 getCalendarData - project: ${projectId}, month: ${month}`);
+
+    // Verify user has access to project
+    const hasAccess = await this.checkUserAccess(projectId, userId);
+    if (!hasAccess) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
+
+    // Parse month (format: YYYY-MM)
+    const [year, monthNum] = month.split('-').map(Number);
+    const startDate = new Date(year, monthNum - 1, 1); // First day of month
+    const endDate = new Date(year, monthNum, 0, 23, 59, 59); // Last day of month
+
+    console.log(
+      `  Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`,
+    );
+
+    // Fetch tasks with due_at in this month
+    const tasks = await this.prisma.tasks.findMany({
+      where: {
+        project_id: projectId,
+        deleted_at: null,
+        due_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        boards: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        task_assignees: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        task_labels: {
+          include: {
+            labels: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ due_at: 'asc' }, { priority: 'desc' }],
+    });
+
+    // Fetch events with start_at in this month
+    const events = await this.prisma.events.findMany({
+      where: {
+        project_id: projectId,
+        start_at: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            users: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar_url: true,
+              },
+            },
+          },
+        },
+        users: {
+          select: {
+            id: true,
+            name: true,
+            avatar_url: true,
+          },
+        },
+      },
+      orderBy: { start_at: 'asc' },
+    });
+
+    // Extract unique dates that have tasks or events
+    const datesWithItems = new Set<string>();
+
+    tasks.forEach((task) => {
+      if (task.due_at) {
+        const dateStr = task.due_at.toISOString().split('T')[0]; // YYYY-MM-DD
+        datesWithItems.add(dateStr);
+      }
+    });
+
+    events.forEach((event) => {
+      if (event.start_at) {
+        const dateStr = event.start_at.toISOString().split('T')[0];
+        datesWithItems.add(dateStr);
+      }
+    });
+
+    console.log(`  ✅ Found ${tasks.length} tasks, ${events.length} events`);
+    console.log(`  ✅ Dates with items: ${datesWithItems.size}`);
+
+    return {
+      tasks,
+      events,
+      datesWithItems: Array.from(datesWithItems).sort(),
+      month,
+      summary: {
+        totalTasks: tasks.length,
+        totalEvents: events.length,
+        datesWithItems: datesWithItems.size,
+      },
+    };
+  }
+
+  /**
+   * Check if user has access to a project
+   */
+  private async checkUserAccess(
+    projectId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      include: {
+        workspaces: {
+          select: {
+            owner_id: true,
+          },
+        },
+        project_members: {
+          where: {
+            user_id: userId,
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      return false;
+    }
+
+    // User is workspace owner OR project member
+    return (
+      project.workspaces.owner_id === userId ||
+      project.project_members.length > 0
+    );
   }
 }

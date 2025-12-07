@@ -135,7 +135,7 @@ export class LabelsService {
     return updated;
   }
 
-    /**
+  /**
    * Delete label (will cascade to task_labels)
    */
   async delete(labelId: string, userId: string) {
@@ -236,6 +236,9 @@ export class LabelsService {
       userId,
       labelName: label.name,
       labelColor: label.color,
+      workspaceId: task.projects.workspace_id, // ✅ Add context
+      projectId: task.projects.id,
+      boardId: task.board_id,
     });
 
     return { success: true, label };
@@ -287,6 +290,9 @@ export class LabelsService {
       labelId,
       userId,
       labelName: taskLabel.labels.name,
+      workspaceId: taskLabel.tasks.projects.workspace_id, // ✅ Add context
+      projectId: taskLabel.tasks.projects.id,
+      boardId: taskLabel.tasks.board_id,
     });
 
     return { success: true };

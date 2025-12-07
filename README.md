@@ -23,13 +23,42 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+PlanTracker Backend - A NestJS-based REST API for the PlanTracker project management application.
 
 ## Project setup
 
 ```bash
 $ npm install
 ```
+
+## Environment Configuration
+
+**IMPORTANT:** Before running the application, configure your environment variables.
+
+### For Local Development (with mobile testing on LAN)
+1. Copy `.env.example` to `.env`
+2. Set `LOCAL=true` to enable LAN access (binds to 0.0.0.0)
+3. Configure database and other credentials
+
+```env
+NODE_ENV=development
+PORT=3000
+LOCAL=true  # Enables LAN access for mobile testing
+```
+
+### For Production/Deployment
+1. Set `LOCAL=false` or remove the `LOCAL` variable
+2. Server will bind to localhost (prevents port scan timeout errors)
+
+```env
+NODE_ENV=production
+PORT=3000
+LOCAL=false  # Or remove this line
+```
+
+📚 **See detailed guides:**
+- [Server Binding Configuration Guide](./SERVER_BINDING_GUIDE.md)
+- [Deployment Checklist](./DEPLOYMENT_CHECKLIST.md)
 
 ## Compile and run the project
 
