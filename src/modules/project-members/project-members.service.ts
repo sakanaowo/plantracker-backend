@@ -577,6 +577,9 @@ export class ProjectMembersService {
 
     // Post-transaction operations (notifications and logging)
     if (action === 'accept') {
+      // Get inviter name for activity log
+      const inviter = invitation.users_project_invitations_invited_byTousers;
+
       // Log member added when accepted (separate from invitation sent)
       await this.activityLogsService.logMemberAdded({
         workspaceId: invitation.projects.workspace_id,
@@ -586,6 +589,7 @@ export class ProjectMembersService {
         memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
         projectName: invitation.projects.name,
+        inviterName: inviter.name,
         metadata: {
           type: 'INVITATION_ACCEPTED',
           invitedBy: invitation.invited_by,
