@@ -213,6 +213,7 @@ export class ActivityLogsService {
     taskId: string;
     userId: string;
     taskTitle: string;
+    projectName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -224,6 +225,9 @@ export class ActivityLogsService {
       entityType: 'TASK',
       entityId: params.taskId,
       entityName: params.taskTitle,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 
@@ -945,6 +949,7 @@ export class ActivityLogsService {
     eventType: 'MEETING' | 'MILESTONE' | 'OTHER';
     startAt: Date;
     endAt: Date;
+    projectName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -958,6 +963,7 @@ export class ActivityLogsService {
         type: params.eventType,
         startAt: params.startAt,
         endAt: params.endAt,
+        projectName: params.projectName,
       },
     });
   }
@@ -973,6 +979,7 @@ export class ActivityLogsService {
     eventTitle: string;
     oldValue?: any;
     newValue?: any;
+    projectName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -984,6 +991,9 @@ export class ActivityLogsService {
       entityName: params.eventTitle,
       oldValue: params.oldValue,
       newValue: params.newValue,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 
@@ -996,6 +1006,7 @@ export class ActivityLogsService {
     eventId: string;
     userId: string;
     eventTitle: string;
+    projectName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -1005,6 +1016,9 @@ export class ActivityLogsService {
       entityType: 'EVENT',
       entityId: params.eventId,
       entityName: params.eventTitle,
+      metadata: {
+        projectName: params.projectName,
+      },
     });
   }
 

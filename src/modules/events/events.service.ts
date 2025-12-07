@@ -62,6 +62,7 @@ export class EventsService {
         eventType: 'MEETING', // Default to MEETING for simple events
         startAt: event.start_at,
         endAt: event.end_at,
+        projectName: event.projects?.name,
       });
       this.logger.log(`✅ Activity log created for event: ${event.title}`);
     } catch (error) {
@@ -170,6 +171,7 @@ export class EventsService {
         endAt: updatedEvent.end_at,
         location: updatedEvent.location,
       },
+      projectName: updatedEvent.projects?.name,
     });
 
     this.logger.log(`Updated event: ${updatedEvent.title} by user ${userId}`);
@@ -193,6 +195,7 @@ export class EventsService {
       eventId: event.id,
       userId,
       eventTitle: event.title,
+      projectName: event.projects?.name,
     });
 
     this.logger.log(`Deleted event: ${event.title} by user ${userId}`);
@@ -422,6 +425,7 @@ export class EventsService {
         projects: {
           select: {
             workspace_id: true,
+            name: true,
           },
         },
       },
@@ -459,6 +463,7 @@ export class EventsService {
         eventType: dto.type,
         startAt: event.start_at,
         endAt: event.end_at,
+        projectName: event.projects?.name,
       });
     } catch (error) {
       this.logger.error('Failed to log event creation activity:', error);
