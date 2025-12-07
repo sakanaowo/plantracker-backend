@@ -968,6 +968,13 @@ export class NotificationsService {
                 `❌ [NOTIFICATION] FCM failed for device ${device.id}:`,
                 fcmError.message,
               );
+              this.logger.error(
+                `❌ [NOTIFICATION] Error code: ${fcmError.code || 'N/A'}`,
+              );
+              this.logger.error(`❌ [NOTIFICATION] Device ID: ${device.id}`);
+              this.logger.error(
+                `❌ [NOTIFICATION] FCM Token: ${device.fcm_token.substring(0, 20)}...`,
+              );
             }
           }
         }

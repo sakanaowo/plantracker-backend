@@ -367,7 +367,7 @@ export class EventsService {
     // If FE doesn't send timezone, default to Vietnam time (+07:00)
     const startAtStr = `${dto.date}T${dto.time}:00`;
     const hasTimezone =
-      startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
+      startAtStr.includes('+') || /-\d{2}:\d{2}$/.test(startAtStr);
     const startAtWithTimezone = hasTimezone
       ? startAtStr
       : `${startAtStr}+07:00`;
@@ -795,14 +795,15 @@ export class EventsService {
     this.logger.log(`   - Project Name: ${event.projects?.name || 'N/A'}`);
     this.logger.log(`   - Start: ${event.start_at}`);
     this.logger.log(`   - Total participants: ${event.participants.length}`);
+    this.logger.log(`   - Event creator: ${event.created_by}`);
 
-    // Get attendee user IDs (exclude null users - external participants)
+    // Get attendee user IDs (exclude null users - external participants AND exclude creator)
     const attendeeIds = event.participants
-      .filter((p) => p.user_id !== null)
+      .filter((p) => p.user_id !== null && p.user_id !== event.created_by)
       .map((p) => p.user_id!); // Use non-null assertion since we filtered nulls
 
     this.logger.log(
-      `👥 [REMINDER] Filtered attendees (registered users only): ${attendeeIds.length}`,
+      `👥 [REMINDER] Filtered attendees (excluding creator): ${attendeeIds.length}`,
     );
     this.logger.log(
       `📋 [REMINDER] Attendee IDs: ${JSON.stringify(attendeeIds)}`,
