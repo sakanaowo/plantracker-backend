@@ -308,6 +308,15 @@ export class EventsService {
       createGoogleMeet: boolean;
     },
   ) {
+    // 🔍 DEBUG: Log incoming request
+    this.logger.log('📥 [CREATE EVENT] Incoming request:');
+    this.logger.log(`   userId: ${userId}`);
+    this.logger.log(`   title: ${dto.title}`);
+    this.logger.log(`   date: ${dto.date}`);
+    this.logger.log(`   time: ${dto.time}`);
+    this.logger.log(`   duration: ${dto.duration} minutes`);
+    this.logger.log(`   type: ${dto.type}`);
+
     // ✅ Auto-add event creator to attendees if not already included (use Set to prevent duplicates)
     const attendeeIdsSet = new Set(dto.attendeeIds);
     attendeeIdsSet.add(userId); // Add creator
@@ -359,8 +368,21 @@ export class EventsService {
     const startAtStr = `${dto.date}T${dto.time}:00`;
     const hasTimezone =
       startAtStr.includes('+') || startAtStr.match(/-\d{2}:\d{2}$/);
-    const startAt = new Date(hasTimezone ? startAtStr : `${startAtStr}+07:00`);
+    const startAtWithTimezone = hasTimezone
+      ? startAtStr
+      : `${startAtStr}+07:00`;
+    const startAt = new Date(startAtWithTimezone);
     const endAt = new Date(startAt.getTime() + dto.duration * 60000);
+
+    // 🔍 DEBUG: Log datetime parsing
+    this.logger.log('📅 [CREATE EVENT] DateTime parsing:');
+    this.logger.log(`   startAtStr: ${startAtStr}`);
+    this.logger.log(`   hasTimezone: ${hasTimezone}`);
+    this.logger.log(`   startAtWithTimezone: ${startAtWithTimezone}`);
+    this.logger.log(`   startAt (Date object): ${startAt.toISOString()}`);
+    this.logger.log(`   endAt (Date object): ${endAt.toISOString()}`);
+    this.logger.log(`   startAt (local): ${startAt.toString()}`);
+    this.logger.log(`   endAt (local): ${endAt.toString()}`);
 
     const event = await this.prisma.events.create({
       data: {
@@ -417,7 +439,14 @@ export class EventsService {
       });
     }
 
-    this.logger.log(`Created project event: ${event.title}`);
+    // 🔍 DEBUG: Log created event details
+    this.logger.log('✅ [CREATE EVENT] Event created successfully:');
+    this.logger.log(`   eventId: ${event.id}`);
+    this.logger.log(`   title: ${event.title}`);
+    this.logger.log(`   start_at (DB): ${event.start_at}`);
+    this.logger.log(`   end_at (DB): ${event.end_at}`);
+    this.logger.log(`   participants: ${event.participants.length}`);
+    this.logger.log(`   meet_link: ${event.meet_link || 'N/A'}`);
 
     // ✅ Log event creation activity
     try {
