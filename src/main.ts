@@ -3,12 +3,28 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import * as os from 'os';
+
+function getLocalIP(): string {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    const ifaces = interfaces[name];
+    if (!ifaces) continue;
+
+    for (const iface of ifaces) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
-  // Allow CORS for LAN access
   const isLocal = process.env.LOCAL === 'true';
   app.enableCors({
     origin: isLocal ? '*' : ['http://localhost:3000'],
@@ -43,11 +59,9 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
 
-  // Bind to 0.0.0.0 only in local development for LAN access
-  // In production/deployment, don't specify host (defaults to localhost)
   if (isLocal) {
     await app.listen(port, '0.0.0.0');
-    const localIP = '192.168.1.17'; // Update this with your actual local IP
+    const localIP = getLocalIP();
     console.log(`Application is running on:`);
     console.log(`  Local:   http://localhost:${port}/api`);
     console.log(`  Network: http://${localIP}:${port}/api`);

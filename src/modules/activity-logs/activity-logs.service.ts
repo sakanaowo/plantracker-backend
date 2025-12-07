@@ -875,6 +875,12 @@ export class ActivityLogsService {
             avatar_url: true,
           },
         },
+        projects: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
       orderBy: { created_at: 'desc' },
       take: limit,
