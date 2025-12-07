@@ -697,6 +697,89 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Send notification when event is cancelled
+   * Strategy: WebSocket if online, FCM if offline
+   */
+  async sendEventCancelled(data: {
+    eventId: string;
+    eventTitle: string;
+    reason?: string;
+    cancelledBy: string;
+    cancelledByName: string;
+    participantIds: string[];
+  }): Promise<void> {
+    try {
+      const message = data.reason
+        ? `${data.cancelledByName} cancelled "${data.eventTitle}". Reason: ${data.reason}`
+        : `${data.cancelledByName} cancelled "${data.eventTitle}"`;
+
+      // Send to all participants
+      for (const userId of data.participantIds) {
+        if (userId === data.cancelledBy) continue; // Skip canceller
+
+        const notificationPayload = {
+          id: crypto.randomUUID(),
+          type: 'EVENT_CANCELLED',
+          title: '🚫 Event Cancelled',
+          body: message,
+          data: {
+            eventId: data.eventId,
+            eventTitle: data.eventTitle,
+            reason: data.reason || '',
+            cancelledBy: data.cancelledBy,
+            cancelledByName: data.cancelledByName,
+            deeplink: `/events/${data.eventId}`,
+          },
+          createdAt: new Date().toISOString(),
+        };
+
+        const wsSuccess = this.notificationsGateway.emitToUser(
+          userId,
+          'notification',
+          notificationPayload,
+        );
+
+        if (wsSuccess) {
+          await this.logNotification({
+            userId,
+            type: 'EVENT_CANCELLED',
+            message,
+            status: 'DELIVERED',
+          });
+        } else {
+          await this.fcmService.sendNotification({
+            userId,
+            notification: {
+              title: '🚫 Event Cancelled',
+              body: message,
+            },
+            data: {
+              type: 'EVENT_CANCELLED',
+              eventId: data.eventId,
+              eventTitle: data.eventTitle,
+              reason: data.reason || '',
+              cancelledByName: data.cancelledByName,
+              deeplink: `/events/${data.eventId}`,
+            },
+          });
+          await this.logNotification({
+            userId,
+            type: 'EVENT_CANCELLED',
+            message,
+            status: 'SENT',
+          });
+        }
+      }
+
+      this.logger.log(
+        `[NOTIFICATION] Event cancelled notification sent to ${data.participantIds.length} participants`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send event cancelled notification:', error);
+    }
+  }
+
   async sendTaskReminder(data: {
     userId: string;
     fcmToken: string;

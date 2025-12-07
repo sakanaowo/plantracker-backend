@@ -967,15 +967,26 @@ export class EventsService {
 
     // 5. Send notifications to participants
     try {
+      const canceller = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      });
+
       const participantIds = event.participants
         .filter((p) => p.users !== null && p.users.id !== userId)
         .map((p) => p.users!.id);
 
       if (participantIds.length > 0) {
-        // TODO: Implement proper event notification method
-        // For now, skip notifications or use existing notification service
+        await this.notificationsService.sendEventCancelled({
+          eventId: eventId,
+          eventTitle: event.title,
+          reason: dto.reason,
+          cancelledBy: userId,
+          cancelledByName: canceller?.name || canceller?.email || 'Unknown',
+          participantIds,
+        });
         this.logger.log(
-          `✅ Event cancelled, ${participantIds.length} participants would be notified`,
+          `✅ Event cancelled notifications sent to ${participantIds.length} participants`,
         );
       }
     } catch (error) {
