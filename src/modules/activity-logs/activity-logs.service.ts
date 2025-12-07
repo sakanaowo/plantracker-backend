@@ -665,6 +665,7 @@ export class ActivityLogsService {
     workspaceId?: string;
     metadata?: any;
     projectName?: string;
+    inviterName?: string;
   }) {
     return this.log({
       workspaceId: params.workspaceId,
@@ -678,6 +679,7 @@ export class ActivityLogsService {
         role: params.role,
         memberId: params.memberId,
         memberName: params.memberName, // ✅ WHO joined (moved from entityName)
+        inviterName: params.inviterName, // ✅ WHO invited
         ...params.metadata,
       }, // Store memberId in metadata instead
     });
@@ -759,9 +761,6 @@ export class ActivityLogsService {
     });
   }
 
-  /**
-   * Get activity feed for a specific project
-   */
   async getProjectActivityFeed(projectId: string, limit = 100) {
     console.log(
       `📋 Getting activity feed for project: ${projectId}, limit: ${limit}`,
