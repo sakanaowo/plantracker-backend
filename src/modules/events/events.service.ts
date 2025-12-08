@@ -10,6 +10,7 @@ import { participant_status } from '@prisma/client';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { MeetingSchedulerService } from '../calendar/meeting-scheduler.service';
 import { CancelEventDto } from './dto/cancel-event.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -17,6 +18,12 @@ import {
   CreateEventReminderDto,
   EventReminderResponseDto,
 } from './dto/event-reminder.dto';
+import {
+  SuggestEventTimeDto,
+  EventTimeSuggestionResponse,
+  TimeSlotSuggestion,
+} from './dto/suggest-event-time.dto';
+import { SuggestMeetingTimeDto } from '../calendar/dto/suggest-meeting-time.dto';
 
 @Injectable()
 export class EventsService {
@@ -27,6 +34,7 @@ export class EventsService {
     private readonly googleCalendarService: GoogleCalendarService,
     private readonly notificationsService: NotificationsService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly meetingSchedulerService: MeetingSchedulerService,
   ) {}
 
   async create(createEventDto: CreateEventDto, userId: string) {
@@ -1430,5 +1438,188 @@ export class EventsService {
     });
 
     this.logger.log(`User ${userId} dismissed reminder ${reminderId}`);
+  }
+
+  // ==================== SMART MEETING TIME SUGGESTIONS ====================
+
+  /**
+   * Suggest optimal meeting times using Google Calendar FreeBusy API
+   * Analyzes participant availability and returns scored time slots
+   */
+  async suggestEventTimes(
+    projectId: string,
+    dto: SuggestEventTimeDto,
+    userId: string,
+  ): Promise<EventTimeSuggestionResponse> {
+    this.logger.log(
+      `Suggesting meeting times for project ${projectId} by user ${userId}`,
+    );
+
+    // Validate project access
+    const project = await this.prisma.projects.findUnique({
+      where: { id: projectId },
+      include: {
+        project_members: {
+          where: { user_id: { in: dto.participantIds } },
+          include: { users: true },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // Check if requesting user is member of project
+    const isMember = await this.prisma.project_members.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: userId,
+      },
+    });
+
+    if (!isMember) {
+      throw new ForbiddenException('Not a member of this project');
+    }
+
+    // Get users with Google Calendar connected
+    const usersWithCalendar = await this.prisma.users.findMany({
+      where: {
+        id: { in: dto.participantIds },
+        integration_tokens: {
+          some: {
+            provider: 'GOOGLE_CALENDAR',
+            status: 'ACTIVE',
+          },
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    });
+
+    if (usersWithCalendar.length === 0) {
+      throw new BadRequestException(
+        'No participants have Google Calendar connected',
+      );
+    }
+
+    // Refresh tokens for all participants before querying FreeBusy
+    this.logger.log(
+      `Refreshing tokens for ${usersWithCalendar.length} participants...`,
+    );
+    const userIds = usersWithCalendar.map((u) => u.id);
+    const refreshResults =
+      await this.googleCalendarService.refreshMultipleTokens(userIds);
+
+    // Log refresh results and filter out users with failed refresh
+    const successfulUserIds = Array.from(refreshResults.entries())
+      .filter(([_, success]) => success)
+      .map(([userId, _]) => userId);
+
+    this.logger.log(
+      `Token refresh completed: ${successfulUserIds.length}/${userIds.length} successful`,
+    );
+
+    if (successfulUserIds.length === 0) {
+      throw new BadRequestException(
+        'All participants have expired tokens. Please reconnect Google Calendar.',
+      );
+    }
+
+    // Map to DTO for MeetingSchedulerService (only users with valid tokens)
+    const meetingDto: SuggestMeetingTimeDto = {
+      userIds: successfulUserIds,
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      durationMinutes: dto.durationMinutes || 60,
+      maxSuggestions: dto.maxSuggestions || 5,
+    };
+
+    // Call FreeBusy service
+    const result =
+      await this.meetingSchedulerService.suggestMeetingTimes(meetingDto);
+
+    // Transform to response format with enhanced metadata
+    const response: EventTimeSuggestionResponse = {
+      suggestions: result.suggestions.map((slot) => {
+        const unavailableUserIds = dto.participantIds.filter(
+          (id) => !slot.availableUsers.includes(id),
+        );
+
+        return {
+          start: slot.start,
+          end: slot.end,
+          availableUsers: slot.availableUsers,
+          unavailableUsers: unavailableUserIds,
+          score: slot.score,
+          scoreLabel: this.getScoreLabel(slot.score),
+        };
+      }),
+      totalParticipants: dto.participantIds.length,
+      participantsWithCalendar: successfulUserIds.length,
+      checkedRange: {
+        start: dto.startDate,
+        end: dto.endDate,
+      },
+      recommendations: this.generateRecommendations(
+        dto.participantIds.length,
+        successfulUserIds.length,
+        result.suggestions.length,
+      ),
+    };
+
+    this.logger.log(
+      `Generated ${response.suggestions.length} meeting time suggestions`,
+    );
+
+    return response;
+  }
+
+  /**
+   * Convert score (0-100) to human-readable label
+   */
+  private getScoreLabel(score: number): 'Excellent' | 'Good' | 'Fair' | 'Poor' {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Fair';
+    return 'Poor';
+  }
+
+  /**
+   * Generate actionable recommendations for scheduling
+   */
+  private generateRecommendations(
+    totalParticipants: number,
+    withCalendar: number,
+    suggestionCount: number,
+  ): string[] {
+    const recommendations: string[] = [];
+
+    if (withCalendar < totalParticipants) {
+      recommendations.push(
+        `${totalParticipants - withCalendar} participant(s) don't have Google Calendar connected. Ask them to connect for better accuracy.`,
+      );
+    }
+
+    if (suggestionCount === 0) {
+      recommendations.push(
+        'No available time slots found. Try expanding your date range or adjusting working hours.',
+      );
+    } else if (suggestionCount < 3) {
+      recommendations.push(
+        'Limited options available. Consider extending the search period or reducing meeting duration.',
+      );
+    }
+
+    if (totalParticipants > 5) {
+      recommendations.push(
+        'Large group detected. Consider splitting into smaller meetings or making attendance optional for some members.',
+      );
+    }
+
+    return recommendations;
   }
 }

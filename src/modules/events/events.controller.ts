@@ -22,6 +22,10 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { CancelEventDto } from './dto/cancel-event.dto';
 import { CreateEventReminderDto } from './dto/event-reminder.dto';
+import {
+  SuggestEventTimeDto,
+  EventTimeSuggestionResponse,
+} from './dto/suggest-event-time.dto';
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
@@ -274,5 +278,30 @@ export class EventsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.eventsService.dismissEventReminder(reminderId, userId);
+  }
+
+  // ==================== SMART MEETING TIME SUGGESTIONS ====================
+
+  @Post('projects/:projectId/suggest-times')
+  @ApiOperation({
+    summary: 'Get smart meeting time suggestions using FreeBusy API',
+    description:
+      'Analyzes participant availability via Google Calendar to suggest optimal meeting times',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Meeting time suggestions retrieved successfully',
+    type: EventTimeSuggestionResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request or no participants with Google Calendar',
+  })
+  async suggestEventTimes(
+    @Param('projectId') projectId: string,
+    @Body() dto: SuggestEventTimeDto,
+    @CurrentUser('id') userId: string,
+  ): Promise<EventTimeSuggestionResponse> {
+    return this.eventsService.suggestEventTimes(projectId, dto, userId);
   }
 }

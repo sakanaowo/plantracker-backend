@@ -99,6 +99,10 @@ export class GoogleCalendarService {
         });
       }
 
+      // Note: No need to refresh immediately after connection
+      // The token we just received is already fresh (expires in 1 hour)
+      // We will refresh it later when needed (before API calls)
+
       return { success: true };
     } catch (error) {
       this.logger.error('OAuth callback error:', error);
@@ -218,6 +222,97 @@ export class GoogleCalendarService {
 
     this.logger.log(`Disconnected Google Calendar for user ${userId}`);
     return { success: true };
+  }
+
+  /**
+   * Refresh access token using refresh token
+   * Returns true if refresh successful, false if refresh token invalid
+   */
+  async refreshAccessToken(userId: string): Promise<boolean> {
+    try {
+      const integration = await this.prisma.integration_tokens.findFirst({
+        where: {
+          user_id: userId,
+          provider: 'GOOGLE_CALENDAR',
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!integration || !integration.refresh_token) {
+        this.logger.warn(`No refresh token found for user ${userId}`);
+        return false;
+      }
+
+      // Check if token is still valid (not expired or expires soon)
+      if (
+        integration.expires_at &&
+        integration.expires_at > new Date(Date.now() + 5 * 60 * 1000) // More than 5 minutes remaining
+      ) {
+        this.logger.debug(
+          `Token for user ${userId} is still valid, skipping refresh`,
+        );
+        return true;
+      }
+
+      const oauth2Client = this.createOAuth2Client();
+      oauth2Client.setCredentials({
+        refresh_token: integration.refresh_token,
+      });
+
+      const { credentials } = await oauth2Client.refreshAccessToken();
+
+      await this.prisma.integration_tokens.update({
+        where: { id: integration.id },
+        data: {
+          access_token: credentials.access_token!,
+          expires_at: credentials.expiry_date
+            ? new Date(credentials.expiry_date)
+            : null,
+          updated_at: new Date(),
+        },
+      });
+
+      this.logger.log(`Refreshed access token for user ${userId}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to refresh token for user ${userId}:`, error);
+
+      // Mark token as expired if refresh failed
+      await this.prisma.integration_tokens
+        .updateMany({
+          where: {
+            user_id: userId,
+            provider: 'GOOGLE_CALENDAR',
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'EXPIRED',
+            updated_at: new Date(),
+          },
+        })
+        .catch(() => {});
+
+      return false;
+    }
+  }
+
+  /**
+   * Refresh tokens for multiple users
+   * Returns map of userId -> refresh success status
+   */
+  async refreshMultipleTokens(
+    userIds: string[],
+  ): Promise<Map<string, boolean>> {
+    const results = new Map<string, boolean>();
+
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const success = await this.refreshAccessToken(userId);
+        results.set(userId, success);
+      }),
+    );
+
+    return results;
   }
 
   private createOAuth2Client() {
