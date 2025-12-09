@@ -40,11 +40,17 @@ export class MeetingSchedulerService {
       endDate,
       durationMinutes = 60,
       maxSuggestions = 5,
+      workingHoursStart = 9,
+      workingHoursEnd = 17,
     } = dto;
 
     this.logger.log(
-      `Suggesting meeting times for ${userIds.length} users from ${startDate} to ${endDate}`,
+      `Suggesting meeting times for ${userIds.length} users from ${startDate} to ${endDate} (${workingHoursStart}h-${workingHoursEnd}h)`,
     );
+
+    // Parse dates
+    const searchStartDate = new Date(startDate);
+    const searchEndDate = new Date(endDate);
 
     // Get free/busy info for all users
     const freeBusyData = await this.getFreeBusyForUsers(
@@ -59,6 +65,10 @@ export class MeetingSchedulerService {
       userIds,
       durationMinutes,
       maxSuggestions,
+      searchStartDate,
+      searchEndDate,
+      workingHoursStart,
+      workingHoursEnd,
     );
 
     return {
@@ -147,21 +157,27 @@ export class MeetingSchedulerService {
     userIds: string[],
     durationMinutes: number,
     maxSuggestions: number,
+    startDate?: Date,
+    endDate?: Date,
+    workingHoursStart: number = 9,
+    workingHoursEnd: number = 17,
   ): TimeSlot[] {
     const slots: TimeSlot[] = [];
 
-    // Define working hours (9 AM - 6 PM)
-    const workingHoursStart = 9;
-    const workingHoursEnd = 18;
+    // Use provided date range or default to next 7 days
+    const searchStartDate = startDate ? new Date(startDate) : new Date();
+    const searchEndDate = endDate
+      ? new Date(endDate)
+      : (() => {
+          const defaultEnd = new Date();
+          defaultEnd.setDate(defaultEnd.getDate() + 7);
+          return defaultEnd;
+        })();
 
     // Generate potential time slots (every 30 minutes during working hours)
-    const now = new Date();
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 7); // Next 7 days
-
     for (
-      let date = new Date(now);
-      date <= endDate;
+      let date = new Date(searchStartDate);
+      date <= searchEndDate;
       date.setDate(date.getDate() + 1)
     ) {
       // Skip weekends
@@ -176,17 +192,26 @@ export class MeetingSchedulerService {
           slotEnd.setMinutes(slotEnd.getMinutes() + durationMinutes);
 
           // Check if slot is in the past
+          const now = new Date();
           if (slotStart < now) continue;
 
-          // Check if slot extends beyond working hours
-          if (slotEnd.getHours() >= workingHoursEnd) continue;
+          // Check if slot extends beyond working hours (5 PM = 17:00)
+          if (
+            slotEnd.getHours() > workingHoursEnd ||
+            (slotEnd.getHours() === workingHoursEnd && slotEnd.getMinutes() > 0)
+          )
+            continue;
 
           // Check availability for all users
           const availableUsers: string[] = [];
+          const unavailableUsers: string[] = [];
 
           for (const userId of userIds) {
             const userData = freeBusyData.get(userId);
-            if (!userData || !userData.available) continue;
+            if (!userData || !userData.available) {
+              unavailableUsers.push(userId);
+              continue;
+            }
 
             const isFree = !this.isTimeSlotBusy(
               slotStart,
@@ -196,6 +221,8 @@ export class MeetingSchedulerService {
 
             if (isFree) {
               availableUsers.push(userId);
+            } else {
+              unavailableUsers.push(userId);
             }
           }
 
@@ -210,6 +237,7 @@ export class MeetingSchedulerService {
               start: slotStart.toISOString(),
               end: slotEnd.toISOString(),
               availableUsers,
+              unavailableUsers,
               score,
             });
           }

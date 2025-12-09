@@ -241,9 +241,14 @@ export class GoogleCalendarService {
         where: {
           user_id: userId,
           provider: 'GOOGLE_CALENDAR',
-          status: 'ACTIVE',
+          // Allow both ACTIVE and EXPIRED - we can refresh expired tokens if refresh_token is valid
+          status: { in: ['ACTIVE', 'EXPIRED'] },
         },
       });
+
+      this.logger.debug(
+        `Integration token lookup for user ${userId}: ${integration ? `found (status: ${integration.status})` : 'not found'}`,
+      );
 
       if (!integration || !integration.refresh_token) {
         this.logger.warn(`No refresh token found for user ${userId}`);
@@ -262,10 +267,16 @@ export class GoogleCalendarService {
       }
 
       const oauth2Client = this.createOAuth2Client();
+
+      this.logger.debug(
+        `OAuth2Client created with client_id: ${this.configService.get('GOOGLE_CLIENT_ID')?.substring(0, 20)}...`,
+      );
+
       oauth2Client.setCredentials({
         refresh_token: integration.refresh_token,
       });
 
+      this.logger.debug(`Attempting to refresh token for user ${userId}...`);
       const { credentials } = await oauth2Client.refreshAccessToken();
 
       await this.prisma.integration_tokens.update({
@@ -275,6 +286,7 @@ export class GoogleCalendarService {
           expires_at: credentials.expiry_date
             ? new Date(credentials.expiry_date)
             : null,
+          status: 'ACTIVE', // Mark as ACTIVE after successful refresh
           updated_at: new Date(),
         },
       });

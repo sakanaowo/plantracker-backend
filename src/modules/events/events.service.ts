@@ -1483,14 +1483,14 @@ export class EventsService {
       throw new ForbiddenException('Not a member of this project');
     }
 
-    // Get users with Google Calendar connected
+    // Get users with Google Calendar connected (ACTIVE or EXPIRED - we'll refresh)
     const usersWithCalendar = await this.prisma.users.findMany({
       where: {
         id: { in: dto.participantIds },
         integration_tokens: {
           some: {
             provider: 'GOOGLE_CALENDAR',
-            status: 'ACTIVE',
+            status: { in: ['ACTIVE', 'EXPIRED'] },
           },
         },
       },
@@ -1501,9 +1501,17 @@ export class EventsService {
       },
     });
 
+    this.logger.log(
+      `Found ${usersWithCalendar.length}/${dto.participantIds.length} participants with Google Calendar connected`,
+    );
+    this.logger.debug(`Participant IDs: ${dto.participantIds.join(', ')}`);
+    this.logger.debug(
+      `Connected users: ${usersWithCalendar.map((u) => `${u.name} (${u.id})`).join(', ')}`,
+    );
+
     if (usersWithCalendar.length === 0) {
       throw new BadRequestException(
-        'No participants have Google Calendar connected',
+        `No participants have Google Calendar connected. Please connect Google Calendar in Settings first. (${dto.participantIds.length} participant(s) selected)`,
       );
     }
 
@@ -1537,6 +1545,8 @@ export class EventsService {
       endDate: dto.endDate,
       durationMinutes: dto.durationMinutes || 60,
       maxSuggestions: dto.maxSuggestions || 5,
+      workingHoursStart: dto.workingHoursStart,
+      workingHoursEnd: dto.workingHoursEnd,
     };
 
     // Call FreeBusy service

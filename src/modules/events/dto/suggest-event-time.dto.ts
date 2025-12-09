@@ -15,13 +15,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class SuggestEventTimeDto {
   @ApiProperty({
-    description: 'Project ID for context',
-    example: 'uuid-project-id',
-  })
-  @IsString()
-  projectId: string;
-
-  @ApiProperty({
     description: 'Array of participant user IDs to check availability',
     example: ['user1-id', 'user2-id', 'user3-id'],
   })

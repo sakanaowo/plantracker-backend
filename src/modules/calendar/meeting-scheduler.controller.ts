@@ -43,6 +43,7 @@ export class MeetingSchedulerController {
       body.attendeeIds,
       {
         ...body.timeSlot,
+        unavailableUsers: [],
         score: 100,
       },
       body.summary,

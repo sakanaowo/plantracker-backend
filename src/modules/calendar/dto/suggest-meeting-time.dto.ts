@@ -48,12 +48,33 @@ export class SuggestMeetingTimeDto {
   @IsNumber()
   @Min(1)
   maxSuggestions?: number;
+
+  @ApiPropertyOptional({
+    description: 'Working hours start (0-23)',
+    example: 9,
+    default: 9,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  workingHoursStart?: number;
+
+  @ApiPropertyOptional({
+    description: 'Working hours end (0-23)',
+    example: 17,
+    default: 17,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  workingHoursEnd?: number;
 }
 
 export interface TimeSlot {
   start: string; // ISO 8601
   end: string; // ISO 8601
   availableUsers: string[]; // User IDs who are free
+  unavailableUsers: string[]; // User IDs who are busy
   score: number; // 0-100, higher = better (more users available)
 }
 
