@@ -364,6 +364,7 @@ export class EventsService {
           endAt,
           attendeeEmails,
           createMeet: dto.createGoogleMeet,
+          recurrence: dto.recurrence,
         });
 
       calendarEventId = result.calendarEventId;
