@@ -1029,7 +1029,7 @@ export class TasksService {
       : new Prisma.Decimal(1024);
 
     // Create task (no auto-assign for quick tasks)
-    return this.prisma.tasks.create({
+    const task = await this.prisma.tasks.create({
       data: {
         project_id: defaultProject.id,
         board_id: targetBoard.id,
@@ -1039,6 +1039,19 @@ export class TasksService {
         position: nextPosition,
       },
     });
+
+    // Log activity
+    await this.activityLogsService.logTaskCreated({
+      workspaceId: workspace.id,
+      projectId: defaultProject.id,
+      boardId: targetBoard.id,
+      taskId: task.id,
+      userId: userId,
+      taskTitle: dto.title,
+      projectName: defaultProject.name,
+    });
+
+    return task;
   }
 
   // ==================== COMMENTS ====================
