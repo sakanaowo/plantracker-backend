@@ -81,6 +81,7 @@ export interface TimeSlot {
 export interface MeetingTimeSuggestion {
   suggestions: TimeSlot[];
   totalUsersChecked: number;
+  successfulUsersChecked: number; // ✅ Users with valid tokens that were successfully checked
   checkedRange: {
     start: string;
     end: string;

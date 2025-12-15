@@ -59,6 +59,15 @@ export class MeetingSchedulerService {
       endDate,
     );
 
+    // Count successful users (those with available=true, meaning token refresh worked)
+    const successfulUsers = Array.from(freeBusyData.values()).filter(
+      (data) => data.available,
+    ).length;
+
+    this.logger.log(
+      `Successfully checked ${successfulUsers}/${userIds.length} users`,
+    );
+
     // Find common free time slots
     const suggestions = this.findCommonFreeSlots(
       freeBusyData,
@@ -74,6 +83,7 @@ export class MeetingSchedulerService {
     return {
       suggestions,
       totalUsersChecked: userIds.length,
+      successfulUsersChecked: successfulUsers,
       checkedRange: {
         start: startDate,
         end: endDate,
@@ -83,6 +93,7 @@ export class MeetingSchedulerService {
 
   /**
    * Get Free/Busy information from Google Calendar for multiple users
+   * ⚠️ IMPORTANT: This method refreshes tokens before querying to avoid stale token issues
    */
   private async getFreeBusyForUsers(
     userIds: string[],
@@ -93,7 +104,23 @@ export class MeetingSchedulerService {
 
     for (const userId of userIds) {
       try {
-        // Get user's Google Calendar token
+        // ✅ CRITICAL FIX: Refresh token before querying to ensure it's valid
+        // This prevents users with expired tokens from being marked as "unavailable"
+        this.logger.debug(
+          `Refreshing token for user ${userId} before FreeBusy query...`,
+        );
+        const refreshSuccess =
+          await this.googleCalendarService.refreshAccessToken(userId);
+
+        if (!refreshSuccess) {
+          this.logger.warn(
+            `Failed to refresh token for user ${userId}, marking as unavailable`,
+          );
+          freeBusyMap.set(userId, { busy: [], available: false });
+          continue;
+        }
+
+        // Get user's Google Calendar token (should be ACTIVE after refresh)
         const token = await this.prisma.integration_tokens.findFirst({
           where: {
             user_id: userId,
@@ -104,9 +131,9 @@ export class MeetingSchedulerService {
 
         if (!token) {
           this.logger.warn(
-            `User ${userId} has no active Google Calendar integration`,
+            `User ${userId} has no active Google Calendar integration after refresh`,
           );
-          freeBusyMap.set(userId, { busy: [], available: true });
+          freeBusyMap.set(userId, { busy: [], available: false });
           continue;
         }
 

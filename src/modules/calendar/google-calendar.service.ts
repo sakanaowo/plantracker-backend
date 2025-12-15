@@ -111,13 +111,6 @@ export class GoogleCalendarService {
   }
 
   async syncUserEvents(userId: string, projectId: string) {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -342,7 +335,19 @@ export class GoogleCalendarService {
     );
   }
 
+  /**
+   * Get Google Calendar client with automatic token refresh
+   * ✅ REFACTORED: Now handles token refresh internally to avoid code duplication
+   */
   private async getCalendarClient(userId: string) {
+    // Refresh token before getting client
+    const refreshed = await this.refreshAccessToken(userId);
+    if (!refreshed) {
+      this.logger.warn(`Failed to refresh token for user ${userId}`);
+      return null;
+    }
+
+    // Get fresh token from DB
     const tokens = await this.prisma.integration_tokens.findFirst({
       where: {
         user_id: userId,
@@ -498,13 +503,6 @@ export class GoogleCalendarService {
     dueDate: Date,
     reminderMinutes: number,
   ): Promise<string | null> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return null;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -561,13 +559,6 @@ export class GoogleCalendarService {
     dueDate: Date,
     reminderMinutes: number,
   ): Promise<boolean> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return false;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -611,13 +602,6 @@ export class GoogleCalendarService {
     userId: string,
     calendarEventId: string,
   ): Promise<boolean> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return false;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -653,13 +637,6 @@ export class GoogleCalendarService {
       recurrence?: 'NONE' | 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
     },
   ): Promise<{ calendarEventId: string | null; meetLink: string | null }> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return { calendarEventId: null, meetLink: null };
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -756,13 +733,6 @@ export class GoogleCalendarService {
       attendeeEmails?: string[];
     },
   ): Promise<boolean> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return false;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);
@@ -822,13 +792,6 @@ export class GoogleCalendarService {
     userId: string,
     calendarEventId: string,
   ): Promise<boolean> {
-    // Refresh token before API call
-    const refreshed = await this.refreshAccessToken(userId);
-    if (!refreshed) {
-      this.logger.warn(`Failed to refresh token for user ${userId}`);
-      return false;
-    }
-
     const calendar = await this.getCalendarClient(userId);
     if (!calendar) {
       this.logger.warn(`No calendar client for user ${userId}`);

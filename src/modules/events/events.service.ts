@@ -1515,32 +1515,17 @@ export class EventsService {
       );
     }
 
-    // Refresh tokens for all participants before querying FreeBusy
+    // ✅ NOTE: Token refresh is now handled inside getFreeBusyForUsers()
+    // No need to pre-refresh here to avoid double refresh
     this.logger.log(
-      `Refreshing tokens for ${usersWithCalendar.length} participants...`,
+      `Preparing to check availability for ${usersWithCalendar.length} participants...`,
     );
     const userIds = usersWithCalendar.map((u) => u.id);
-    const refreshResults =
-      await this.googleCalendarService.refreshMultipleTokens(userIds);
 
-    // Log refresh results and filter out users with failed refresh
-    const successfulUserIds = Array.from(refreshResults.entries())
-      .filter(([_, success]) => success)
-      .map(([userId, _]) => userId);
-
-    this.logger.log(
-      `Token refresh completed: ${successfulUserIds.length}/${userIds.length} successful`,
-    );
-
-    if (successfulUserIds.length === 0) {
-      throw new BadRequestException(
-        'All participants have expired tokens. Please reconnect Google Calendar.',
-      );
-    }
-
-    // Map to DTO for MeetingSchedulerService (only users with valid tokens)
+    // Map to DTO for MeetingSchedulerService
+    // getFreeBusyForUsers() will refresh tokens and filter out failed users
     const meetingDto: SuggestMeetingTimeDto = {
-      userIds: successfulUserIds,
+      userIds: userIds, // Pass all userIds, let getFreeBusyForUsers() handle refresh
       startDate: dto.startDate,
       endDate: dto.endDate,
       durationMinutes: dto.durationMinutes || 60,
@@ -1552,6 +1537,13 @@ export class EventsService {
     // Call FreeBusy service
     const result =
       await this.meetingSchedulerService.suggestMeetingTimes(meetingDto);
+
+    // Use successful count from meeting scheduler
+    const participantsWithCalendar = result.successfulUsersChecked;
+
+    this.logger.log(
+      `Successfully checked ${participantsWithCalendar}/${usersWithCalendar.length} participants with Google Calendar`,
+    );
 
     // Transform to response format with enhanced metadata
     const response: EventTimeSuggestionResponse = {
@@ -1570,14 +1562,14 @@ export class EventsService {
         };
       }),
       totalParticipants: dto.participantIds.length,
-      participantsWithCalendar: successfulUserIds.length,
+      participantsWithCalendar: participantsWithCalendar,
       checkedRange: {
         start: dto.startDate,
         end: dto.endDate,
       },
       recommendations: this.generateRecommendations(
         dto.participantIds.length,
-        successfulUserIds.length,
+        participantsWithCalendar,
         result.suggestions.length,
       ),
     };
