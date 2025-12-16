@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { CommonModule } from './common/common.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { BoardsModule } from './modules/boards/boards.module';
 import { TasksModule } from './modules/tasks/tasks.module';
@@ -26,6 +27,7 @@ import { GoogleAuthModule } from './modules/google-auth/google-auth.module';
 @Module({
   imports: [
     PrismaModule,
+    CommonModule,
     ProjectsModule,
     BoardsModule,
     TasksModule,

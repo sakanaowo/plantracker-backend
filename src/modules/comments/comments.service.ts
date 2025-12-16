@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { ListCommentsQueryDto } from './dto/list-comments-query.dto';
@@ -17,6 +18,7 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -24,7 +26,11 @@ export class CommentsService {
    */
   async create(taskId: string, userId: string, dto: CreateCommentDto) {
     // Validate task exists and user has access
-    const task = await this.validateTaskAccess(taskId, userId);
+    const task = await this.permissionService.validateTaskAccess(
+      taskId,
+      userId,
+      { includeAssignees: true },
+    );
 
     // Create comment
     const comment = await this.prisma.task_comments.create({
@@ -103,7 +109,7 @@ export class CommentsService {
     query: ListCommentsQueryDto,
   ) {
     // Validate task access
-    await this.validateTaskAccess(taskId, userId);
+    await this.permissionService.validateTaskAccess(taskId, userId);
 
     const limit = query.limit ?? 20;
     const sort = query.sort ?? 'desc';
@@ -299,43 +305,4 @@ export class CommentsService {
   //     // });
   //   }
   // }
-
-  /**
-   * Helper: Validate task exists and user has access
-   */
-  private async validateTaskAccess(taskId: string, userId: string) {
-    const task = await this.prisma.tasks.findUnique({
-      where: { id: taskId },
-      include: {
-        task_assignees: {
-          include: {
-            users: {
-              select: { id: true, name: true, email: true },
-            },
-          },
-        },
-        projects: {
-          include: {
-            workspaces: {
-              include: {
-                memberships: {
-                  where: { user_id: userId },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-
-    if (task.projects.workspaces.memberships.length === 0) {
-      throw new ForbiddenException('Access denied to this task');
-    }
-
-    return task;
-  }
 }

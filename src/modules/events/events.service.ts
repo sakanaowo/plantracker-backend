@@ -11,6 +11,7 @@ import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { MeetingSchedulerService } from '../calendar/meeting-scheduler.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { CancelEventDto } from './dto/cancel-event.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -35,6 +36,7 @@ export class EventsService {
     private readonly notificationsService: NotificationsService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly meetingSchedulerService: MeetingSchedulerService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   async create(createEventDto: CreateEventDto, userId: string) {
@@ -132,7 +134,7 @@ export class EventsService {
     const oldEvent = await this.findOne(id);
 
     // ✅ Permission check: Only event creator or project admin/owner can update
-    await this.checkEventPermission(
+    await this.permissionService.checkEventPermission(
       oldEvent.project_id,
       userId,
       oldEvent.created_by,
@@ -190,7 +192,11 @@ export class EventsService {
     const event = await this.findOne(id);
 
     // ✅ Permission check: Only event creator or project admin/owner can delete
-    await this.checkEventPermission(event.project_id, userId, event.created_by);
+    await this.permissionService.checkEventPermission(
+      event.project_id,
+      userId,
+      event.created_by,
+    );
 
     await this.prisma.events.delete({
       where: { id },
@@ -542,7 +548,11 @@ export class EventsService {
     }
 
     // ✅ Permission check: Only event creator or project admin/owner can update
-    await this.checkEventPermission(event.project_id, userId, event.created_by);
+    await this.permissionService.checkEventPermission(
+      event.project_id,
+      userId,
+      event.created_by,
+    );
 
     // Update in Google Calendar if exists
     const mapping = event.external_event_map[0];
@@ -668,7 +678,11 @@ export class EventsService {
     }
 
     // Permission check: Only event creator or project admin/owner can delete
-    await this.checkEventPermission(event.project_id, userId, event.created_by);
+    await this.permissionService.checkEventPermission(
+      event.project_id,
+      userId,
+      event.created_by,
+    );
 
     // Delete from Google Calendar if exists
     const mapping = event.external_event_map[0];
@@ -959,7 +973,11 @@ export class EventsService {
     }
 
     // Permission check: Only event creator or project admin/owner can cancel
-    await this.checkEventPermission(event.project_id, userId, event.created_by);
+    await this.permissionService.checkEventPermission(
+      event.project_id,
+      userId,
+      event.created_by,
+    );
 
     // 2. Check if already cancelled
     if (event.status === 'CANCELLED') {
@@ -1184,7 +1202,11 @@ export class EventsService {
     }
 
     // Permission check: Only event creator or project admin/owner can hard delete
-    await this.checkEventPermission(event.project_id, userId, event.created_by);
+    await this.permissionService.checkEventPermission(
+      event.project_id,
+      userId,
+      event.created_by,
+    );
 
     // Delete from Google Calendar first
     try {
@@ -1224,43 +1246,6 @@ export class EventsService {
    * - Project OWNER and ADMIN can edit/delete any event
    * - Project MEMBER can only edit/delete events they created
    */
-  private async checkEventPermission(
-    projectId: string,
-    userId: string,
-    eventCreatorId: string | null,
-  ) {
-    // If user is the event creator, allow
-    if (eventCreatorId === userId) {
-      return true;
-    }
-
-    // Check user's project role
-    const member = await this.prisma.project_members.findUnique({
-      where: {
-        project_id_user_id: {
-          project_id: projectId,
-          user_id: userId,
-        },
-      },
-    });
-
-    // If not a project member, deny
-    if (!member) {
-      throw new ForbiddenException(
-        'You do not have permission to modify this event',
-      );
-    }
-
-    // OWNER and ADMIN can modify any event
-    if (member.role === 'OWNER' || member.role === 'ADMIN') {
-      return true;
-    }
-
-    // MEMBER can only modify their own events (already checked above)
-    throw new ForbiddenException(
-      'Members can only edit/delete events they created',
-    );
-  }
 
   // ==================== EVENT REMINDERS ====================
 
@@ -1290,7 +1275,7 @@ export class EventsService {
     }
 
     // Check sender has permission to send reminders for this event
-    await this.checkEventPermission(
+    await this.permissionService.checkEventPermission(
       event.project_id,
       senderId,
       event.created_by,

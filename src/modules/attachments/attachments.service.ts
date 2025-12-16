@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { RequestAttachmentUploadDto } from './dto/request-attachment-upload.dto';
 import {
   ATTACHMENT_LIMITS,
@@ -20,6 +21,7 @@ export class AttachmentsService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -31,7 +33,10 @@ export class AttachmentsService {
     dto: RequestAttachmentUploadDto,
   ) {
     // Validate task access
-    const task = await this.validateTaskAccess(taskId, userId);
+    const task = await this.permissionService.validateTaskAccess(
+      taskId,
+      userId,
+    );
 
     // Validate file type
     if (!isAllowedFileType(dto.mimeType)) {
@@ -112,7 +117,7 @@ export class AttachmentsService {
    */
   async listByTask(taskId: string, userId: string) {
     // Validate task access
-    await this.validateTaskAccess(taskId, userId);
+    await this.permissionService.validateTaskAccess(taskId, userId);
 
     console.log(`📎 Listing attachments for task: ${taskId}`);
     const attachments = await this.prisma.attachments.findMany({
@@ -169,7 +174,7 @@ export class AttachmentsService {
     }
 
     // Validate task access
-    await this.validateTaskAccess(attachment.task_id, userId);
+    await this.permissionService.validateTaskAccess(attachment.task_id, userId);
 
     // Generate signed view URL (600s expiry)
     const { signedUrl } = await this.storageService.createSignedViewUrl(
@@ -249,37 +254,5 @@ export class AttachmentsService {
     // Remove timestamp prefix (e.g., "1234567890-file.pdf" -> "file.pdf")
     const match = fileNameWithTimestamp.match(/^\d+-(.+)$/);
     return match ? match[1] : fileNameWithTimestamp;
-  }
-
-  /**
-   * Helper: Validate task exists and user has access
-   */
-  private async validateTaskAccess(taskId: string, userId: string) {
-    const task = await this.prisma.tasks.findUnique({
-      where: { id: taskId },
-      include: {
-        projects: {
-          include: {
-            workspaces: {
-              include: {
-                memberships: {
-                  where: { user_id: userId },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-
-    if (task.projects.workspaces.memberships.length === 0) {
-      throw new ForbiddenException('Access denied to this task');
-    }
-
-    return task;
   }
 }

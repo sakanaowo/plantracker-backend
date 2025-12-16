@@ -8,6 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { TaskCalendarSyncService } from '../calendar/task-calendar-sync.service';
+import { PermissionService } from '../../common/services/permission.service';
+import { ContextService } from '../../common/services/context.service';
 
 @Injectable()
 export class TasksService {
@@ -16,84 +18,9 @@ export class TasksService {
     private readonly notificationsService: NotificationsService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly taskCalendarSyncService: TaskCalendarSyncService,
+    private readonly permissionService: PermissionService,
+    private readonly contextService: ContextService,
   ) {}
-
-  /**
-   * Check if user has permission to modify a task
-   * Rules:
-   * - Task creator (created_by === userId) can modify
-   * - Task assignees can modify
-   * - Project OWNER/ADMIN can modify any task
-   * - Project MEMBER can only modify tasks they created or are assigned to
-   */
-  private async checkTaskPermission(
-    projectId: string,
-    userId: string,
-    taskCreatorId: string | null,
-    taskAssigneeIds: string[],
-  ) {
-    // If user is the task creator, allow
-    if (taskCreatorId === userId) {
-      return true;
-    }
-
-    // If user is assigned to the task, allow
-    if (taskAssigneeIds.includes(userId)) {
-      return true;
-    }
-
-    // Check user's project role
-    const member = await this.prisma.project_members.findUnique({
-      where: {
-        project_id_user_id: {
-          project_id: projectId,
-          user_id: userId,
-        },
-      },
-    });
-
-    if (!member) {
-      throw new ForbiddenException('You are not a member of this project');
-    }
-
-    // OWNER and ADMIN can modify any task
-    // MEMBER can only modify tasks they created or are assigned to
-    if (member.role === 'OWNER' || member.role === 'ADMIN') {
-      return true;
-    }
-
-    throw new ForbiddenException(
-      'Members can only edit/delete tasks they created or are assigned to',
-    );
-  }
-
-  /**
-   * Helper to get workspace/project/board context for a task
-   */
-  private async getTaskContext(taskId: string) {
-    const task = await this.prisma.tasks.findUnique({
-      where: { id: taskId },
-      include: {
-        projects: {
-          select: {
-            id: true,
-            workspace_id: true,
-          },
-        },
-        boards: {
-          select: {
-            id: true,
-          },
-        },
-      },
-    });
-
-    return {
-      workspaceId: task?.projects?.workspace_id,
-      projectId: task?.project_id,
-      boardId: task?.board_id,
-    };
-  }
 
   listByBoard(boardId: string) {
     return this.prisma.tasks.findMany({
@@ -528,7 +455,7 @@ export class TasksService {
 
     // Permission check: Only task creator, assignees, or project admin/owner can update
     if (dto.updatedBy) {
-      await this.checkTaskPermission(
+      await this.permissionService.checkTaskPermission(
         currentTask.project_id,
         dto.updatedBy,
         currentTask.created_by,
@@ -687,7 +614,7 @@ export class TasksService {
       }
 
       if (Object.keys(changes).length > 0) {
-        const context = await this.getTaskContext(id);
+        const context = await this.contextService.getTaskContext(id);
         await this.activityLogsService.logTaskUpdated({
           taskId: id,
           userId: dto.updatedBy,
@@ -736,7 +663,7 @@ export class TasksService {
 
     // Permission check: Only task creator, assignees, or project admin/owner can move
     if (movedBy) {
-      await this.checkTaskPermission(
+      await this.permissionService.checkTaskPermission(
         currentTask.project_id,
         movedBy,
         currentTask.created_by,
@@ -829,63 +756,65 @@ export class TasksService {
 
     // Log task move if board changed
     if (movedBy && currentTask && currentTask.board_id !== toBoardId) {
-      const context = await this.getTaskContext(id);
+      const context = await this.contextService.getTaskContext(id);
 
-      // Get board names for activity log and notification
-      const [fromBoard, toBoard] = await Promise.all([
-        this.prisma.boards.findUnique({
-          where: { id: currentTask.board_id },
-          select: { name: true },
-        }),
-        this.prisma.boards.findUnique({
-          where: { id: toBoardId },
-          select: { name: true },
-        }),
-      ]);
+      if (context) {
+        // Get board names for activity log and notification
+        const [fromBoard, toBoard] = await Promise.all([
+          this.prisma.boards.findUnique({
+            where: { id: currentTask.board_id },
+            select: { name: true },
+          }),
+          this.prisma.boards.findUnique({
+            where: { id: toBoardId },
+            select: { name: true },
+          }),
+        ]);
 
-      await this.activityLogsService.logTaskMoved({
-        taskId: id,
-        userId: movedBy,
-        fromBoardId: currentTask.board_id,
-        toBoardId: toBoardId,
-        fromBoardName: fromBoard?.name,
-        toBoardName: toBoard?.name,
-        taskTitle: currentTask.title,
-        workspaceId: context.workspaceId,
-        projectId: context.projectId,
-      });
-
-      // 🔔 Send TASK_MOVED notification
-      try {
-        // Get project members to notify (exclude mover)
-        const projectMembers = await this.prisma.project_members.findMany({
-          where: {
-            project_id: context.projectId,
-            user_id: { not: movedBy },
-          },
-          select: { user_id: true },
+        await this.activityLogsService.logTaskMoved({
+          taskId: id,
+          userId: movedBy,
+          fromBoardId: currentTask.board_id,
+          toBoardId: toBoardId,
+          fromBoardName: fromBoard?.name,
+          toBoardName: toBoard?.name,
+          taskTitle: currentTask.title,
+          workspaceId: context.workspaceId,
+          projectId: context.projectId,
         });
 
-        // Get mover info
-        const mover = await this.prisma.users.findUnique({
-          where: { id: movedBy },
-          select: { name: true, email: true },
-        });
-
-        if (projectMembers.length > 0 && mover) {
-          await this.notificationsService.sendTaskMoved({
-            taskId: id,
-            taskTitle: currentTask.title,
-            fromBoard: fromBoard?.name,
-            toBoard: toBoard?.name,
-            movedBy,
-            movedByName: mover.name || mover.email,
-            notifyUserIds: projectMembers.map((m) => m.user_id),
+        // 🔔 Send TASK_MOVED notification
+        try {
+          // Get project members to notify (exclude mover)
+          const projectMembers = await this.prisma.project_members.findMany({
+            where: {
+              project_id: context.projectId,
+              user_id: { not: movedBy },
+            },
+            select: { user_id: true },
           });
+
+          // Get mover info
+          const mover = await this.prisma.users.findUnique({
+            where: { id: movedBy },
+            select: { name: true, email: true },
+          });
+
+          if (projectMembers.length > 0 && mover) {
+            await this.notificationsService.sendTaskMoved({
+              taskId: id,
+              taskTitle: currentTask.title,
+              fromBoard: fromBoard?.name,
+              toBoard: toBoard?.name,
+              movedBy,
+              movedByName: mover.name || mover.email,
+              notifyUserIds: projectMembers.map((m) => m.user_id),
+            });
+          }
+        } catch (error) {
+          // Silently fail notification - don't block task move
+          console.error('Failed to send task moved notification:', error);
         }
-      } catch (error) {
-        // Silently fail notification - don't block task move
-        console.error('Failed to send task moved notification:', error);
       }
     }
 
@@ -914,7 +843,7 @@ export class TasksService {
 
     // Permission check: Only task creator, assignees, or project admin/owner can delete
     if (deletedBy) {
-      await this.checkTaskPermission(
+      await this.permissionService.checkTaskPermission(
         task.project_id,
         deletedBy,
         task.created_by,
@@ -929,7 +858,7 @@ export class TasksService {
 
     // Log task deletion
     if (deletedBy && task) {
-      const context = await this.getTaskContext(id);
+      const context = await this.contextService.getTaskContext(id);
       await this.activityLogsService.logTaskDeleted({
         taskId: id,
         userId: deletedBy,
@@ -1305,7 +1234,7 @@ export class TasksService {
 
       // Log assignment
       if (assignedBy && project?.workspace_id) {
-        const context = await this.getTaskContext(taskId);
+        const context = await this.contextService.getTaskContext(taskId);
         await this.activityLogsService.logTaskAssigned({
           taskId,
           userId: assignedBy,
@@ -1359,7 +1288,7 @@ export class TasksService {
 
     // Log unassignment
     if (unassignedBy) {
-      const context = await this.getTaskContext(taskId);
+      const context = await this.contextService.getTaskContext(taskId);
       await this.activityLogsService.logTaskUnassigned({
         taskId,
         userId: unassignedBy,

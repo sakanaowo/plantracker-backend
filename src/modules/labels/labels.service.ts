@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { CreateLabelDto } from './dto/create-label.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
 import { MAX_LABELS_PER_TASK, isValidLabelColor } from '../../common/constants';
@@ -16,6 +17,7 @@ export class LabelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -23,7 +25,7 @@ export class LabelsService {
    */
   async create(projectId: string, userId: string, dto: CreateLabelDto) {
     // Validate project access
-    await this.validateProjectAccess(projectId, userId);
+    await this.permissionService.validateProjectAccess(projectId, userId);
 
     // Validate color is in predefined palette
     if (!isValidLabelColor(dto.color)) {
@@ -61,7 +63,7 @@ export class LabelsService {
    */
   async listByProject(projectId: string, userId: string) {
     // Validate project access
-    await this.validateProjectAccess(projectId, userId);
+    await this.permissionService.validateProjectAccess(projectId, userId);
 
     const labels = await this.prisma.labels.findMany({
       where: { project_id: projectId },
@@ -98,7 +100,10 @@ export class LabelsService {
     }
 
     // Validate project access
-    await this.validateProjectAccess(label.project_id, userId);
+    await this.permissionService.validateProjectAccess(
+      label.project_id,
+      userId,
+    );
 
     // Validate color if provided
     if (dto.color && !isValidLabelColor(dto.color)) {
@@ -151,7 +156,10 @@ export class LabelsService {
     }
 
     // Validate project access
-    await this.validateProjectAccess(label.project_id, userId);
+    await this.permissionService.validateProjectAccess(
+      label.project_id,
+      userId,
+    );
 
     // Delete label (cascade will remove task_labels)
     await this.prisma.labels.delete({
@@ -198,7 +206,10 @@ export class LabelsService {
     }
 
     // Validate project access
-    await this.validateProjectAccess(task.projects.id, userId);
+    await this.permissionService.validateProjectAccess(
+      task.projects.id,
+      userId,
+    );
 
     // Check max labels limit
     if (task.task_labels.length >= MAX_LABELS_PER_TASK) {
@@ -272,7 +283,10 @@ export class LabelsService {
     }
 
     // Validate project access
-    await this.validateProjectAccess(taskLabel.tasks.projects.id, userId);
+    await this.permissionService.validateProjectAccess(
+      taskLabel.tasks.projects.id,
+      userId,
+    );
 
     // Remove label
     await this.prisma.task_labels.delete({
@@ -316,7 +330,10 @@ export class LabelsService {
     }
 
     // Validate project access
-    await this.validateProjectAccess(task.projects.id, userId);
+    await this.permissionService.validateProjectAccess(
+      task.projects.id,
+      userId,
+    );
 
     const taskLabels = await this.prisma.task_labels.findMany({
       where: { task_id: taskId },
@@ -326,75 +343,5 @@ export class LabelsService {
     });
 
     return taskLabels.map((tl) => tl.labels);
-  }
-
-  /**
-   * Helper: Validate user has access to project
-   */
-  private async validateProjectAccess(projectId: string, userId: string) {
-    const project = await this.prisma.projects.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        workspace_id: true,
-        type: true,
-      },
-    });
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    // Check workspace membership
-    const membership = await this.prisma.memberships.findUnique({
-      where: {
-        user_id_workspace_id: {
-          user_id: userId,
-          workspace_id: project.workspace_id,
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException('Access denied to this project');
-    }
-
-    // For TEAM projects, also check project membership
-    if (project.type === 'TEAM') {
-      const projectMember = await this.prisma.project_members.findUnique({
-        where: {
-          project_id_user_id: {
-            project_id: projectId,
-            user_id: userId,
-          },
-        },
-      });
-
-      if (!projectMember) {
-        throw new ForbiddenException('Access denied to this team project');
-      }
-    }
-
-    return project;
-  }
-
-  /**
-   * Helper: Validate user has access to workspace (deprecated, use validateProjectAccess)
-   */
-  private async validateWorkspaceAccess(workspaceId: string, userId: string) {
-    const membership = await this.prisma.memberships.findUnique({
-      where: {
-        user_id_workspace_id: {
-          user_id: userId,
-          workspace_id: workspaceId,
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException('Access denied to this workspace');
-    }
-
-    return membership;
   }
 }

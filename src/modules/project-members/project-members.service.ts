@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { project_role } from '@prisma/client';
@@ -18,6 +19,7 @@ export class ProjectMembersService {
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -127,7 +129,10 @@ export class ProjectMembersService {
     } else {
       console.log('ℹ️ Project is already TEAM type');
       // For TEAM projects, check permission (must be OWNER or ADMIN)
-      await this.checkProjectRole(projectId, invitedBy, ['OWNER', 'ADMIN']);
+      await this.permissionService.checkProjectRole(projectId, invitedBy, [
+        'OWNER',
+        'ADMIN',
+      ]);
     }
 
     // Find user by email
@@ -249,7 +254,7 @@ export class ProjectMembersService {
     );
 
     // Validate project access
-    await this.validateProjectAccess(projectId, userId);
+    await this.permissionService.validateProjectAccess(projectId, userId);
     console.log(
       `✅ Access validated for user ${userId} to project ${projectId}`,
     );
@@ -300,7 +305,9 @@ export class ProjectMembersService {
     dto: UpdateMemberRoleDto,
   ) {
     // Check permission (must be OWNER)
-    await this.checkProjectRole(projectId, updatedBy, ['OWNER']);
+    await this.permissionService.checkProjectRole(projectId, updatedBy, [
+      'OWNER',
+    ]);
 
     // Get member
     const member = await this.prisma.project_members.findUnique({
@@ -372,7 +379,10 @@ export class ProjectMembersService {
    */
   async removeMember(projectId: string, memberId: string, removedBy: string) {
     // Check permission (OWNER or ADMIN)
-    await this.checkProjectRole(projectId, removedBy, ['OWNER', 'ADMIN']);
+    await this.permissionService.checkProjectRole(projectId, removedBy, [
+      'OWNER',
+      'ADMIN',
+    ]);
 
     // Get member
     const member = await this.prisma.project_members.findUnique({
@@ -723,97 +733,5 @@ export class ProjectMembersService {
       memberCount: project.project_members.length,
       convertedAt: new Date(),
     };
-  }
-
-  /**
-   * Helper: Check if user has required role in project
-   */
-  private async checkProjectRole(
-    projectId: string,
-    userId: string,
-    requiredRoles: project_role[],
-  ) {
-    let member = await this.prisma.project_members.findUnique({
-      where: {
-        project_id_user_id: {
-          project_id: projectId,
-          user_id: userId,
-        },
-      },
-    });
-
-    if (!member) {
-      // 🔧 AUTO-FIX: Check if user is workspace owner (missing project_member record)
-      // This handles legacy projects created before we added automatic project_member creation
-      const project = await this.prisma.projects.findUnique({
-        where: { id: projectId },
-        include: {
-          workspaces: {
-            select: { owner_id: true },
-          },
-        },
-      });
-
-      if (project?.workspaces?.owner_id === userId) {
-        console.log(
-          '🔧 AUTO-FIX: Workspace owner missing project_member record, creating with OWNER role',
-        );
-        member = await this.prisma.project_members.create({
-          data: {
-            project_id: projectId,
-            user_id: userId,
-            role: 'OWNER',
-            added_by: userId,
-          },
-        });
-        console.log(
-          '✅ Project_member record auto-created for workspace owner',
-        );
-      } else {
-        throw new ForbiddenException('You are not a member of this project');
-      }
-    }
-
-    if (!requiredRoles.includes(member.role)) {
-      throw new ForbiddenException(
-        `This action requires one of these roles: ${requiredRoles.join(', ')}`,
-      );
-    }
-
-    return member;
-  }
-
-  /**
-   * Helper: Validate user has access to project
-   *
-   * Logic:
-   * - User must be in project_members to access ANY project (PERSONAL or TEAM)
-   * - Workspace memberships are for workspace-level access, not project-level
-   * - Project owner always has access (checked separately if needed)
-   */
-  private async validateProjectAccess(projectId: string, userId: string) {
-    const project = await this.prisma.projects.findUnique({
-      where: { id: projectId },
-      include: {
-        workspaces: true,
-        project_members: {
-          where: { user_id: userId },
-        },
-      },
-    });
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    // Check if user is project member OR workspace owner
-    const isProjectMember = project.project_members.length > 0;
-    const isWorkspaceOwner = project.workspaces.owner_id === userId;
-
-    if (!isProjectMember && !isWorkspaceOwner) {
-      throw new ForbiddenException('Access denied to this project');
-    }
-
-    return project;
   }
 }
