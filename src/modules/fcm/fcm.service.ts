@@ -104,6 +104,41 @@ export class FcmService implements OnModuleInit {
           `❌ [FCM] Error info: ${JSON.stringify(error.errorInfo)}`,
         );
       }
+
+      // Handle invalid/expired FCM tokens
+      if (
+        error.code === 'messaging/registration-token-not-registered' ||
+        error.code === 'messaging/invalid-registration-token'
+      ) {
+        this.logger.warn(
+          `🧹 [FCM] Invalid token detected, cleaning up database...`,
+        );
+
+        // Extract userId and token for cleanup
+        let tokenToRemove: string | null = null;
+        let userIdToLog: string | null = null;
+
+        if ('userId' in message) {
+          userIdToLog = message.userId;
+          const user = await this.getUserFcmToken(message.userId);
+          tokenToRemove = user?.fcmToken || null;
+        } else if ('token' in message) {
+          tokenToRemove = message.token;
+        }
+
+        // Remove invalid token from database
+        if (tokenToRemove) {
+          await this.removeInvalidToken(tokenToRemove, userIdToLog);
+        }
+
+        // Return gracefully instead of throwing - notification failed but app should continue
+        this.logger.warn(
+          `⚠️ [FCM] Notification skipped due to invalid token (cleaned up)`,
+        );
+        return 'TOKEN_INVALID_CLEANED';
+      }
+
+      // For other errors, still throw
       throw error;
     }
   }
@@ -217,6 +252,34 @@ export class FcmService implements OnModuleInit {
         error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Invalid FCM token: ${errorMessage}`);
       return false;
+    }
+  }
+
+  /**
+   * Remove invalid FCM token from database
+   */
+  private async removeInvalidToken(
+    fcmToken: string,
+    userId?: string | null,
+  ): Promise<void> {
+    try {
+      const result = await this.prisma.user_devices.updateMany({
+        where: {
+          fcm_token: fcmToken,
+        },
+        data: {
+          fcm_token: '', // Clear the invalid token
+        },
+      });
+
+      this.logger.log(
+        `✅ [FCM] Removed invalid token from ${result.count} device(s)${userId ? ` for user ${userId}` : ''}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ [FCM] Failed to remove invalid token from database:`,
+        error,
+      );
     }
   }
 }

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import * as admin from 'firebase-admin';
 
 /**
  * Interface for Socket data extension
@@ -47,7 +48,7 @@ interface JwtPayload {
  */
 @WebSocketGateway({
   cors: {
-    origin: '*', // TODO: Restrict in production
+    origin: '*',
   },
   namespace: '/notifications',
 })
@@ -81,9 +82,16 @@ export class NotificationsGateway
         return;
       }
 
-      // Verify JWT token
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      const userId = payload.sub || payload.userId;
+      // Verify Firebase ID token (NOT JWT - Firebase uses RS256)
+      let userId: string;
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        userId = decodedToken.uid;
+      } catch (firebaseError) {
+        console.error('Firebase token verification failed:', firebaseError);
+        client.disconnect();
+        return;
+      }
 
       if (!userId) {
         console.log('❌ WebSocket connection rejected: Invalid token');

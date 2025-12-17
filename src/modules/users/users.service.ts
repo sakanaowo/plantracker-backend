@@ -3,6 +3,7 @@ import {
   BadRequestException,
   UnauthorizedException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WorkspacesService } from 'src/modules/workspaces/workspaces.service';
@@ -18,6 +19,7 @@ import slugify from 'slugify';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
   private supabase: ReturnType<typeof createClient>;
   private bucket: string;
 
@@ -347,20 +349,31 @@ export class UsersService {
     console.log(`   FCM Token: ${dto.fcmToken.substring(0, 20)}...`);
     console.log(`   Platform: ${dto.platform}, Model: ${dto.deviceModel}`);
 
-    // Check if device already exists by fcm_token
-    const existingDevice = await this.prisma.user_devices.findUnique({
-      where: { fcm_token: dto.fcmToken },
+    // ✅ FIX: Find device by user_id + platform + device_model (NOT by fcm_token)
+    // Because fcm_token can change (refresh), but device is the same
+    const existingDevice = await this.prisma.user_devices.findFirst({
+      where: {
+        user_id: userId,
+        platform: dto.platform,
+        device_model: dto.deviceModel ?? undefined,
+      },
+      orderBy: { last_active_at: 'desc' },
     });
 
     if (existingDevice) {
       console.log(
-        `✅ [FCM] Token already registered, updating device ${existingDevice.id}`,
+        `✅ [FCM] Device found (${existingDevice.id}), updating FCM token`,
       );
-      // Update existing device
+      console.log(
+        `   Old token: ${existingDevice.fcm_token.substring(0, 20)}...`,
+      );
+      console.log(`   New token: ${dto.fcmToken.substring(0, 20)}...`);
+
+      // ✅ Update device with NEW FCM token
       const updated = await this.prisma.user_devices.update({
         where: { id: existingDevice.id },
         data: {
-          user_id: userId, // Re-assign to current user if changed
+          fcm_token: dto.fcmToken, // ✅ UPDATE TOKEN!
           platform: dto.platform,
           device_model: dto.deviceModel ?? null,
           app_version: dto.appVersion ?? null,
@@ -370,7 +383,7 @@ export class UsersService {
           last_active_at: new Date(),
         },
       });
-      console.log(`✓ Device updated successfully`);
+      console.log(`✓ Device updated with new token successfully`);
       return this.mapDeviceToDto(updated);
     }
 
@@ -443,6 +456,13 @@ export class UsersService {
       throw new NotFoundException('Device not found');
     }
 
+    this.logger.log(`🔕 [FCM] Unregistering device for user: ${userId}`);
+    this.logger.log(`   Device ID: ${deviceId}`);
+    this.logger.log(`   FCM Token: ${device.fcm_token?.substring(0, 20)}...`);
+    this.logger.log(
+      `   Platform: ${device.platform}, Model: ${device.device_model}`,
+    );
+
     await this.prisma.user_devices.update({
       where: { id: deviceId },
       data: {
@@ -450,6 +470,8 @@ export class UsersService {
         last_active_at: new Date(),
       },
     });
+
+    this.logger.log(`✓ Device unregistered successfully (is_active = false)`);
 
     return { message: 'Device unregistered successfully' };
   }

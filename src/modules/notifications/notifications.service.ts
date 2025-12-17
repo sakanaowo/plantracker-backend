@@ -36,7 +36,7 @@ export class NotificationsService {
       const notificationPayload = {
         id: crypto.randomUUID(),
         type: 'TASK_ASSIGNED',
-        title: 'New Task',
+        title: '📝 New Task',
         body: message,
         data: {
           taskId: data.taskId,
@@ -94,7 +94,7 @@ export class NotificationsService {
         await this.fcmService.sendNotification({
           token: assigneeDevice.fcm_token,
           notification: {
-            title: 'New Task',
+            title: '📝 New Task',
             body: message,
           },
           data: {
@@ -159,7 +159,7 @@ export class NotificationsService {
       const notificationPayload = {
         id: crypto.randomUUID(),
         type: 'PROJECT_INVITE',
-        title: 'Project Invite',
+        title: '🎯 Lời Mời Project',
         body: message,
         data: {
           projectId: data.projectId,
@@ -316,7 +316,7 @@ export class NotificationsService {
         const notificationPayload = {
           id: crypto.randomUUID(),
           type: 'TASK_COMMENT',
-          title: 'New Comment',
+          title: '💬 New Comment',
           body: message,
           data: {
             taskId: data.taskId,
@@ -347,7 +347,7 @@ export class NotificationsService {
           await this.fcmService.sendNotification({
             userId,
             notification: {
-              title: 'New Comment',
+              title: '💬 New Comment',
               body: message,
             },
             data: {
@@ -421,7 +421,7 @@ export class NotificationsService {
         const notificationPayload = {
           id: crypto.randomUUID(),
           type: 'TASK_MOVED',
-          title: 'Task Moved',
+          title: '📦 Task Moved',
           body: message,
           data: {
             taskId: data.taskId,
@@ -520,7 +520,7 @@ export class NotificationsService {
         const notificationPayload = {
           id: crypto.randomUUID(),
           type: 'EVENT_INVITE',
-          title: 'Event Invitation',
+          title: '📅 Event Invitation',
           body: message,
           data: {
             eventId: data.eventId,
@@ -632,7 +632,7 @@ export class NotificationsService {
         const notificationPayload = {
           id: crypto.randomUUID(),
           type: 'EVENT_UPDATED',
-          title: 'Event Updated',
+          title: '📝 Event Updated',
           body: message,
           data: {
             eventId: data.eventId,
@@ -795,7 +795,7 @@ export class NotificationsService {
       await this.fcmService.sendNotification({
         token: data.fcmToken,
         notification: {
-          title: 'Task Reminder',
+          title: '⏰ Task Reminder',
           body: data.message,
         },
         data: {
