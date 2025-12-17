@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { participant_status } from '@prisma/client';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { MeetingSchedulerService } from '../calendar/meeting-scheduler.service';
 import { CancelEventDto } from './dto/cancel-event.dto';
@@ -21,7 +22,6 @@ import {
 import {
   SuggestEventTimeDto,
   EventTimeSuggestionResponse,
-  TimeSlotSuggestion,
 } from './dto/suggest-event-time.dto';
 import { SuggestMeetingTimeDto } from '../calendar/dto/suggest-meeting-time.dto';
 
@@ -33,6 +33,7 @@ export class EventsService {
     private readonly prisma: PrismaService,
     private readonly googleCalendarService: GoogleCalendarService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
     private readonly activityLogsService: ActivityLogsService,
     private readonly meetingSchedulerService: MeetingSchedulerService,
   ) {}
@@ -76,6 +77,16 @@ export class EventsService {
     } catch (error) {
       this.logger.error(`❌ Failed to create activity log: ${error.message}`);
     }
+
+    // Emit event_updated event to project room
+    this.notificationsGateway.emitToProject(
+      createEventDto.projectId,
+      'event_updated',
+      { projectId: createEventDto.projectId, eventId: event.id },
+    );
+    this.logger.log(
+      `🔔 Emitted event_created to project ${createEventDto.projectId}`,
+    );
 
     return event;
   }
@@ -182,6 +193,20 @@ export class EventsService {
       projectName: updatedEvent.projects?.name,
     });
 
+    // 🔔 Emit event_updated event to project room
+    this.notificationsGateway.emitToProject(
+      updatedEvent.project_id,
+      'event_updated',
+      {
+        projectId: updatedEvent.project_id,
+        eventId: updatedEvent.id,
+        action: 'updated',
+      },
+    );
+    this.logger.log(
+      `🔔 Emitted event_updated to project ${updatedEvent.project_id}`,
+    );
+
     this.logger.log(`Updated event: ${updatedEvent.title} by user ${userId}`);
     return updatedEvent;
   }
@@ -205,6 +230,14 @@ export class EventsService {
       eventTitle: event.title,
       projectName: event.projects?.name,
     });
+
+    // 🔔 Emit event_updated event to project room
+    this.notificationsGateway.emitToProject(event.project_id, 'event_updated', {
+      projectId: event.project_id,
+      eventId: event.id,
+      action: 'deleted',
+    });
+    this.logger.log(`🔔 Emitted event_deleted to project ${event.project_id}`);
 
     this.logger.log(`Deleted event: ${event.title} by user ${userId}`);
     return { message: 'Event deleted successfully' };
@@ -510,6 +543,14 @@ export class EventsService {
       this.logger.error('Failed to send event invite notifications:', error);
     }
 
+    // 🔔 Emit event_updated event to project room for real-time updates
+    this.notificationsGateway.emitToProject(dto.projectId, 'event_updated', {
+      projectId: dto.projectId,
+      eventId: event.id,
+      action: 'created',
+    });
+    this.logger.log(`🔔 Emitted event_created to project ${dto.projectId}`);
+
     return event;
   }
 
@@ -647,6 +688,14 @@ export class EventsService {
       this.logger.error('Failed to send event updated notifications:', error);
     }
 
+    // 🔔 Emit event_updated event to project room for real-time updates
+    this.notificationsGateway.emitToProject(event.project_id, 'event_updated', {
+      projectId: event.project_id,
+      eventId: updatedEvent.id,
+      action: 'updated',
+    });
+    this.logger.log(`🔔 Emitted event_updated to project ${event.project_id}`);
+
     return updatedEvent;
   }
 
@@ -687,6 +736,14 @@ export class EventsService {
     await this.prisma.events.delete({
       where: { id: eventId },
     });
+
+    // 🔔 Emit event_updated event to project room for real-time updates
+    this.notificationsGateway.emitToProject(event.project_id, 'event_updated', {
+      projectId: event.project_id,
+      eventId: eventId,
+      action: 'deleted',
+    });
+    this.logger.log(`🔔 Emitted event_deleted to project ${event.project_id}`);
 
     this.logger.log(`Deleted project event: ${event.title}`);
     return { success: true };
@@ -764,6 +821,14 @@ export class EventsService {
     await this.prisma.events.delete({
       where: { id: eventId },
     });
+
+    // 🔔 Emit event_updated event to project room for real-time updates
+    this.notificationsGateway.emitToProject(event.project_id, 'event_updated', {
+      projectId: event.project_id,
+      eventId: eventId,
+      action: 'permanently_deleted',
+    });
+    this.logger.log(`🔔 Emitted event_deleted to project ${event.project_id}`);
 
     this.logger.log(
       `Permanently deleted event: ${event.title} by user ${userId}`,
@@ -1037,7 +1102,14 @@ export class EventsService {
       this.logger.error(`❌ Failed to send notifications: ${error.message}`);
     }
 
-    // 6. Delete from Google Calendar if synced
+    // 6. Emit event_cancelled event to project room
+    this.notificationsGateway.emitToProject(projectId, 'event_updated', {
+      projectId,
+      eventId,
+    });
+    this.logger.log(`🔔 Emitted event_cancelled to project ${projectId}`);
+
+    // 7. Delete from Google Calendar if synced
     try {
       const externalMapping = await this.prisma.external_event_map.findFirst({
         where: {

@@ -6,6 +6,7 @@ import {
 import { Prisma, tasks, task_comments, issue_status } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { TaskCalendarSyncService } from '../calendar/task-calendar-sync.service';
 
@@ -14,6 +15,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
     private readonly activityLogsService: ActivityLogsService,
     private readonly taskCalendarSyncService: TaskCalendarSyncService,
   ) {}
@@ -478,6 +480,13 @@ export class TasksService {
       }
     }
 
+    // Emit task_created event to project room
+    this.notificationsGateway.emitToProject(dto.projectId, 'task_updated', {
+      projectId: dto.projectId,
+      taskId: task.id,
+    });
+    console.log(`🔔 Emitted task_created to project ${dto.projectId}`);
+
     return task;
   }
 
@@ -642,6 +651,14 @@ export class TasksService {
       updatedTask.task_assignees?.length || 0,
     );
     console.log('    - Labels count:', updatedTask.task_labels?.length || 0);
+
+    // Emit task_updated event to project room
+    this.notificationsGateway.emitToProject(
+      currentTask.project_id,
+      'task_updated',
+      { projectId: currentTask.project_id, taskId: id },
+    );
+    console.log(`🔔 Emitted task_updated to project ${currentTask.project_id}`);
 
     // Log task update
     if (dto.updatedBy) {
@@ -889,6 +906,26 @@ export class TasksService {
       }
     }
 
+    // 🔔 Emit real-time task_updated event to project room
+    if (currentTask?.project_id) {
+      this.notificationsGateway.emitToProject(
+        currentTask.project_id,
+        'task_updated',
+        {
+          taskId: id,
+          action: 'moved',
+          fromBoardId: currentTask.board_id,
+          toBoardId: toBoardId,
+          newStatus: updatedTask.status,
+          position: updatedTask.position.toString(),
+          updatedAt: new Date().toISOString(),
+        },
+      );
+      console.log(
+        `📤 Emitted 'task_updated' (moved) to project ${currentTask.project_id}`,
+      );
+    }
+
     return updatedTask;
   }
 
@@ -937,6 +974,13 @@ export class TasksService {
         ...context,
       });
     }
+
+    // Emit task_deleted event to project room
+    this.notificationsGateway.emitToProject(task.project_id, 'task_updated', {
+      projectId: task.project_id,
+      taskId: id,
+    });
+    console.log(`🔔 Emitted task_deleted to project ${task.project_id}`);
 
     return deletedTask;
   }

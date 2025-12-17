@@ -13,8 +13,8 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { JwtService } from '@nestjs/jwt';
 import * as admin from 'firebase-admin';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * Interface for Socket data extension
@@ -22,15 +22,6 @@ import * as admin from 'firebase-admin';
 interface SocketData {
   userId: string;
   notificationTypes?: string[];
-}
-
-/**
- * Interface for JWT payload
- */
-interface JwtPayload {
-  sub?: string;
-  userId?: string;
-  [key: string]: any;
 }
 
 /**
@@ -61,7 +52,7 @@ export class NotificationsGateway
   // Track online users: userId -> Set<socketId>
   private onlineUsers = new Map<string, Set<string>>();
 
-  constructor(private jwtService: JwtService) {}
+  constructor(private prisma: PrismaService) {}
 
   /**
    * Handle client connection
@@ -106,6 +97,9 @@ export class NotificationsGateway
       const userRoom = `user_${userId}`;
       await client.join(userRoom);
 
+      // Auto-join user to all project rooms they're a member of
+      await this.joinUserProjectRooms(client, userId);
+
       // Track online status
       if (!this.onlineUsers.has(userId)) {
         this.onlineUsers.set(userId, new Set());
@@ -133,6 +127,46 @@ export class NotificationsGateway
     } catch (error: any) {
       console.error('WebSocket auth error:', error?.message || error);
       client.disconnect();
+    }
+  }
+
+  /**
+   * Auto-join user to all project rooms they're a member of
+   * This ensures they receive project-level events (task_updated, event_updated, etc.)
+   */
+  private async joinUserProjectRooms(client: Socket, userId: string) {
+    try {
+      // Fetch all projects where user is a member
+      const projectMembers = await this.prisma.project_members.findMany({
+        where: {
+          user_id: userId,
+        },
+        select: {
+          project_id: true,
+        },
+      });
+
+      const projectIds = projectMembers.map((pm) => pm.project_id);
+
+      if (projectIds.length === 0) {
+        console.log(`   ℹ️ User ${userId} has no projects yet`);
+        return;
+      }
+
+      // Join each project room
+      for (const projectId of projectIds) {
+        const projectRoom = `project_${projectId}`;
+        await client.join(projectRoom);
+      }
+
+      console.log(
+        `   ✅ User ${userId} joined ${projectIds.length} project rooms`,
+      );
+    } catch (error: any) {
+      console.error(
+        `   ❌ Failed to join project rooms for user ${userId}:`,
+        error?.message || error,
+      );
     }
   }
 

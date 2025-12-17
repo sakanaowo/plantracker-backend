@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { project_role } from '@prisma/client';
@@ -18,6 +19,7 @@ export class ProjectMembersService {
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   /**
@@ -216,9 +218,6 @@ export class ProjectMembersService {
       },
     });
 
-    // ✅ Don't create activity log when sending invitation
-    // Invitations will be shown in separate Invitations tab via /api/invitations/my endpoint
-    // Activity log will be created only when invitation is ACCEPTED (see respondToInvitation method)
     console.log('✅ Invitation created (will appear in invitations tab)');
 
     // Send notification to invited user
@@ -554,6 +553,13 @@ export class ProjectMembersService {
           console.log(
             `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
           );
+
+          // Emit workspace_updated event to user
+          this.notificationsGateway.emitToUser(userId, 'workspace_updated', {
+            workspaceId,
+            userId,
+          });
+          console.log(`🔔 Emitted workspace_updated to user ${userId}`);
         } else {
           console.log(
             `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
