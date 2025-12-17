@@ -13,13 +13,23 @@ import {
 } from 'src/modules/notifications/dto';
 import * as admin from 'firebase-admin';
 import { Prisma } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
+import slugify from 'slugify';
 
 @Injectable()
 export class UsersService {
+  private supabase: ReturnType<typeof createClient>;
+  private bucket: string;
+
   constructor(
     private prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
-  ) {}
+  ) {
+    const url = process.env.SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    this.supabase = createClient(url, key, { auth: { persistSession: false } });
+    this.bucket = process.env.SUPABASE_BUCKET!;
+  }
 
   // ========== Firebase ==========
   async ensureFromFirebase(opts: {
@@ -530,5 +540,41 @@ export class UsersService {
       console.error(`❌ Error deleting user ${userId}:`, error);
       throw new BadRequestException('Failed to delete account');
     }
+  }
+
+  // ========== Avatar Upload (Supabase Storage) ==========
+
+  /**
+   * Generate safe storage path for avatar
+   */
+  private safePath(userId: string, fileName: string): string {
+    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'jpg';
+    const base = fileName.replace(/\.[^/.]+$/, '');
+    const name = slugify(base, { lower: true, strict: true });
+    return `${userId}/avatar/${Date.now()}-${name}.${ext}`;
+  }
+
+  /**
+   * Request upload URL for user avatar
+   */
+  async requestAvatarUpload(userId: string, fileName: string) {
+    const objectPath = this.safePath(userId, fileName);
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUploadUrl(objectPath);
+
+    if (error) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: error.message,
+        error: 'CREATE_SIGNED_URL_FAILED',
+      });
+    }
+
+    return {
+      path: objectPath,
+      signedUrl: data.signedUrl,
+      token: data.token,
+    };
   }
 }

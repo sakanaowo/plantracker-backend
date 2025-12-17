@@ -17,11 +17,11 @@ import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { CombinedAuthGuard } from 'src/auth/combined-auth.guard';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { updateMeDto } from './dto/update-me.dto';
+import { RequestAvatarUploadDto } from './dto/request-avatar-upload.dto';
 import {
   RegisterDeviceDto,
   UpdateTokenDto,
 } from 'src/modules/notifications/dto';
-// import type { UserPayload } from 'src/type/user-payload.type';
 import { Public } from 'src/auth/public.decorator';
 import * as admin from 'firebase-admin';
 
@@ -91,6 +91,19 @@ export class UsersController {
   @ApiOperation({ summary: 'Update my profile' })
   updateMe(@CurrentUser() userId: string, @Body() dto: updateMeDto) {
     return this.users.updateMeById(userId, dto);
+  }
+
+  // ==================== AVATAR UPLOAD ====================
+
+  @Post('avatar/upload-url')
+  @ApiBearerAuth()
+  @UseGuards(CombinedAuthGuard)
+  @ApiOperation({ summary: 'Request signed upload URL for avatar' })
+  requestAvatarUpload(
+    @CurrentUser() userId: string,
+    @Body() dto: RequestAvatarUploadDto,
+  ) {
+    return this.users.requestAvatarUpload(userId, dto.fileName);
   }
 
   // ==================== FCM DEVICE MANAGEMENT ====================

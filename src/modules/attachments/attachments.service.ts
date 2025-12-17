@@ -5,7 +5,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { RequestAttachmentUploadDto } from './dto/request-attachment-upload.dto';
 import {
@@ -13,14 +12,23 @@ import {
   isAllowedFileType,
   isValidFileSize,
 } from '../../common/constants';
+import { createClient } from '@supabase/supabase-js';
+import slugify from 'slugify';
 
 @Injectable()
 export class AttachmentsService {
+  private supabase: ReturnType<typeof createClient>;
+  private bucket: string;
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storageService: StorageService,
     private readonly activityLogsService: ActivityLogsService,
-  ) {}
+  ) {
+    const url = process.env.SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    this.supabase = createClient(url, key, { auth: { persistSession: false } });
+    this.bucket = process.env.SUPABASE_BUCKET!;
+  }
 
   /**
    * Request upload URL for attachment (Step 1 of 2-step upload)
@@ -58,13 +66,13 @@ export class AttachmentsService {
       );
     }
 
-    // Create signed upload URL via StorageService
-    // ✅ FIX: Use the actual path returned by StorageService (not generateStoragePath)
+    // Create signed upload URL via Supabase
+    // ✅ FIX: Use the actual path returned by Supabase (not generateStoragePath)
     const {
       path: storagePath,
       signedUrl,
       token,
-    } = await this.storageService.createSignedUploadUrl(userId, dto.fileName);
+    } = await this.createSignedUploadUrl(userId, dto.fileName);
 
     // Pre-create attachment record with the ACTUAL storage path
     const attachment = await this.prisma.attachments.create({
@@ -138,7 +146,7 @@ export class AttachmentsService {
     return attachments.map((attachment) => ({
       id: attachment.id,
       taskId: attachment.task_id,
-      url: this.storageService.getPublicUrl(attachment.url), // ✅ Convert to full public URL
+      url: this.getPublicUrl(attachment.url), // ✅ Convert to full public URL
       fileName: this.extractFileName(attachment.url),
       mimeType: attachment.mime_type,
       size: attachment.size,
@@ -172,9 +180,7 @@ export class AttachmentsService {
     await this.validateTaskAccess(attachment.task_id, userId);
 
     // Generate signed view URL (600s expiry)
-    const { signedUrl } = await this.storageService.createSignedViewUrl(
-      attachment.url,
-    );
+    const { signedUrl } = await this.createSignedViewUrl(attachment.url);
 
     return {
       signedUrl,
@@ -214,7 +220,7 @@ export class AttachmentsService {
 
     // Delete from Supabase Storage
     try {
-      await this.storageService.remove(attachment.url);
+      await this.remove(attachment.url);
     } catch (error) {
       // Log error but continue with DB deletion
       console.error('Failed to delete file from storage:', error);
@@ -238,6 +244,79 @@ export class AttachmentsService {
 
     return { success: true, deletedId: attachmentId };
   }
+
+  // ========== Supabase Storage Methods (moved from StorageService) ==========
+
+  /**
+   * Generate safe storage path for file
+   */
+  private safePath(userId: string, fileName: string): string {
+    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'jpg';
+    const base = fileName.replace(/\.[^/.]+$/, '');
+    const name = slugify(base, { lower: true, strict: true });
+    return `${userId}/uploads/${Date.now()}-${name}.${ext}`;
+  }
+
+  /**
+   * Create signed upload URL for file
+   */
+  private async createSignedUploadUrl(userId: string, fileName: string) {
+    const objectPath = this.safePath(userId, fileName);
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUploadUrl(objectPath);
+    if (error)
+      throw new BadRequestException({
+        statusCode: 400,
+        message: error.message,
+        error: 'CREATE_SIGNED_URL_FAILED',
+      });
+    return { path: objectPath, signedUrl: data.signedUrl, token: data.token };
+  }
+
+  /**
+   * Create signed view URL for file
+   */
+  private async createSignedViewUrl(objectPath: string) {
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUrl(objectPath, 600);
+    if (error)
+      throw new BadRequestException({
+        statusCode: 400,
+        message: error.message,
+        error: 'CREATE_SIGNED_URL_FAILED',
+      });
+    return { signedUrl: data.signedUrl };
+  }
+
+  /**
+   * Remove file from storage
+   */
+  private async remove(objectPath: string) {
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .remove([objectPath]);
+    if (error)
+      throw new BadRequestException({
+        statusCode: 400,
+        message: error.message,
+        error: 'DELETE_FILE_FAILED',
+      });
+    return { ok: true };
+  }
+
+  /**
+   * Get public URL for a file in storage
+   */
+  private getPublicUrl(objectPath: string): string {
+    const { data } = this.supabase.storage
+      .from(this.bucket)
+      .getPublicUrl(objectPath);
+    return data.publicUrl;
+  }
+
+  // ========== Helper Methods ==========
 
   /**
    * Helper: Extract file name from storage path
