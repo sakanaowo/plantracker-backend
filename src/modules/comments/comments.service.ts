@@ -2,10 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { ListCommentsQueryDto } from './dto/list-comments-query.dto';
@@ -17,6 +20,8 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly notificationsService: NotificationsService,
+    @Inject(forwardRef(() => NotificationsGateway))
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   /**
@@ -90,6 +95,14 @@ export class CommentsService {
         notifyUserIds,
       });
     }
+
+    // Emit WebSocket event to project for real-time comment update
+    this.notificationsGateway.emitToProject(task.project_id, 'task_updated', {
+      taskId,
+      action: 'comment_created',
+      comment,
+    });
+    console.log(`Emitted comment_created to project ${task.project_id}`);
 
     return comment;
   }

@@ -674,12 +674,12 @@ export class ActivityLogsService {
       action: 'ADDED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.projectName, // ✅ PROJECT NAME (what was joined)
+      entityName: params.projectName,
       metadata: {
         role: params.role,
         memberId: params.memberId,
-        memberName: params.memberName, // ✅ WHO joined (moved from entityName)
-        inviterName: params.inviterName, // ✅ WHO invited
+        memberName: params.memberName,
+        inviterName: params.inviterName,
         ...params.metadata,
       }, // Store memberId in metadata instead
     });
@@ -702,12 +702,12 @@ export class ActivityLogsService {
       action: 'UPDATED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.projectName, // ✅ PROJECT NAME
+      entityName: params.projectName, 
       oldValue: { role: params.oldRole },
       newValue: { role: params.newRole },
       metadata: {
         memberId: params.memberId,
-        memberName: params.memberName, // ✅ WHO got role change
+        memberName: params.memberName, 
       },
     });
   }
@@ -728,11 +728,11 @@ export class ActivityLogsService {
       action: 'REMOVED',
       entityType: 'MEMBERSHIP',
       // entityId omitted: memberId is Firebase UID, incompatible with UUID column
-      entityName: params.projectName, // ✅ PROJECT NAME (what they left/were removed from)
+      entityName: params.projectName, 
       metadata: {
         role: params.role,
         memberId: params.memberId,
-        memberName: params.memberName, // ✅ WHO left or was removed
+        memberName: params.memberName, 
       },
     });
   }
@@ -833,7 +833,7 @@ export class ActivityLogsService {
     const userEmail = user?.email;
 
     console.log(
-      `📋 Getting activity feed for user: ${userId} (email: ${userEmail})`,
+      `Getting activity feed for user: ${userId} (email: ${userEmail})`,
     );
 
     // Get all projects where user is a member
