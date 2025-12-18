@@ -221,6 +221,20 @@ export class CommentsService {
       metadata: { edited: true },
     });
 
+    // Emit WebSocket event for real-time update
+    this.notificationsGateway.emitToProject(
+      oldComment.tasks.project_id,
+      'task_updated',
+      {
+        taskId: oldComment.task_id,
+        action: 'comment_updated',
+        comment: updated,
+      },
+    );
+    console.log(
+      `Emitted comment_updated to project ${oldComment.tasks.project_id}`,
+    );
+
     return updated;
   }
 
@@ -264,6 +278,20 @@ export class CommentsService {
         body: comment.body.substring(0, 100),
       },
     });
+
+    // Emit WebSocket event for real-time update
+    this.notificationsGateway.emitToProject(
+      comment.tasks.project_id,
+      'task_updated',
+      {
+        taskId: comment.task_id,
+        action: 'comment_deleted',
+        commentId,
+      },
+    );
+    console.log(
+      `Emitted comment_deleted to project ${comment.tasks.project_id}`,
+    );
 
     return { success: true, deletedId: commentId };
   }
