@@ -63,8 +63,8 @@ export class WorkspacesService {
         return { ...ws, projects: [] }; // Mark as new workspace with no projects
       },
       {
-        maxWait: 10000, // Maximum wait time to acquire a connection (10s)
-        timeout: 20000, // Maximum time the transaction can run (20s)
+        maxWait: 10000,
+        timeout: 20000,
       },
     );
 
@@ -72,12 +72,10 @@ export class WorkspacesService {
       try {
         await this.createDefaultProjectForWorkspace(workspace.id, userId);
       } catch (error) {
-        // Log error nhưng không throw - workspace vẫn được tạo thành công
         console.error(
           `Failed to create default project for workspace ${workspace.id}:`,
           error,
         );
-        // User có thể tự tạo project sau
       }
     }
 
@@ -88,7 +86,6 @@ export class WorkspacesService {
     workspaceId: string,
     userId: string,
   ) {
-    // Kiểm tra xem đã có project nào chưa (đề phòng race condition)
     const existingProjects = await this.prisma.projects.count({
       where: { workspace_id: workspaceId },
     });
@@ -191,7 +188,7 @@ export class WorkspacesService {
   }
 
   async listMine(userId: string) {
-    console.log(`📋 listMine called - Getting workspaces for user: ${userId}`);
+    console.log(`listMine called - Getting workspaces for user: ${userId}`);
 
     // Get workspaces where user is member or owner
     const [asMember, asOwner, viaProjects] = await Promise.all([
@@ -220,7 +217,7 @@ export class WorkspacesService {
       }),
     ]);
 
-    console.log(`✅ Found workspaces:`);
+    console.log(`Found workspaces:`);
     console.log(`   - As explicit member: ${asMember.length}`);
     console.log(`   - As owner: ${asOwner.length}`);
     console.log(`   - Via project membership: ${viaProjects.length}`);
@@ -252,7 +249,7 @@ export class WorkspacesService {
     });
 
     const result = Array.from(map.values());
-    console.log(`📊 Total unique workspaces: ${result.length}`);
+    console.log(`Total unique workspaces: ${result.length}`);
     result.forEach((w, index) => {
       console.log(
         `   ${index + 1}. ${w.name} (owner: ${w.isOwner ? 'YES' : 'NO'}, id: ${w.id})`,

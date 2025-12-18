@@ -27,7 +27,7 @@ async function bootstrap() {
 
   const isLocal = process.env.LOCAL === 'true';
   app.enableCors({
-    origin: isLocal ? '*' : ['http://localhost:3000'],
+    origin: '*', // Allow all origins for WebSocket connections from mobile app
     credentials: true,
   });
 

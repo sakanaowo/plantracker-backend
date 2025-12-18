@@ -68,12 +68,12 @@ export class NotificationsGateway
         (client.handshake.query.token as string);
 
       if (!token) {
-        console.log('❌ WebSocket connection rejected: No token');
+        console.log('WebSocket connection rejected: No token');
         client.disconnect();
         return;
       }
 
-      // Verify Firebase ID token (NOT JWT - Firebase uses RS256)
+      // Verify Firebase ID token
       let userId: string;
       try {
         const decodedToken = await admin.auth().verifyIdToken(token);
@@ -85,7 +85,7 @@ export class NotificationsGateway
       }
 
       if (!userId) {
-        console.log('❌ WebSocket connection rejected: Invalid token');
+        console.log('WebSocket connection rejected: Invalid token');
         client.disconnect();
         return;
       }
@@ -103,7 +103,7 @@ export class NotificationsGateway
       // Track online status
       if (!this.onlineUsers.has(userId)) {
         this.onlineUsers.set(userId, new Set());
-        console.log(`🆕 [WebSocket] First connection for user ${userId}`);
+        console.log(`[WebSocket] First connection for user ${userId}`);
       }
       this.onlineUsers.get(userId)!.add(client.id);
 
@@ -122,7 +122,7 @@ export class NotificationsGateway
         timestamp: new Date().toISOString(),
       });
 
-      // Notify user they're online (optional)
+      // Notify user they're online
       this.emitToUser(userId, 'status', { online: true });
     } catch (error: any) {
       console.error('WebSocket auth error:', error?.message || error);
@@ -149,7 +149,7 @@ export class NotificationsGateway
       const projectIds = projectMembers.map((pm) => pm.project_id);
 
       if (projectIds.length === 0) {
-        console.log(`   ℹ️ User ${userId} has no projects yet`);
+        console.log(`User ${userId} has no projects yet`);
         return;
       }
 
@@ -159,12 +159,10 @@ export class NotificationsGateway
         await client.join(projectRoom);
       }
 
-      console.log(
-        `   ✅ User ${userId} joined ${projectIds.length} project rooms`,
-      );
+      console.log(`User ${userId} joined ${projectIds.length} project rooms`);
     } catch (error: any) {
       console.error(
-        `   ❌ Failed to join project rooms for user ${userId}:`,
+        `Failed to join project rooms for user ${userId}:`,
         error?.message || error,
       );
     }
@@ -256,11 +254,6 @@ export class NotificationsGateway
       data: { timestamp: new Date().toISOString() },
     };
   }
-
-  // ============================================
-  // Public methods for emitting notifications
-  // ============================================
-
   /**
    * Emit notification to specific user
    * Returns true if user is online and message was sent
@@ -271,7 +264,7 @@ export class NotificationsGateway
     const isOnline = this.isUserOnline(userId);
     const socketCount = this.onlineUsers.get(userId)?.size || 0;
 
-    console.log(`📤 [WebSocket] Emitting '${event}' to user ${userId}`);
+    console.log(`[WebSocket] Emitting '${event}' to user ${userId}`);
     console.log(`   User status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
     console.log(`   Active sockets: ${socketCount}`);
     console.log(`   Room: ${userRoom}`);
@@ -279,23 +272,14 @@ export class NotificationsGateway
 
     if (!isOnline) {
       console.log(
-        `⚠️ [WebSocket] User ${userId} not connected - message will be lost!`,
+        `[WebSocket] User ${userId} not connected - message will be lost!`,
       );
       return false;
     }
 
     this.server.to(userRoom).emit(event, data);
-    console.log(`✅ [WebSocket] Message emitted to room ${userRoom}`);
+    console.log(`[WebSocket] Message emitted to room ${userRoom}`);
     return true;
-  }
-
-  /**
-   * Emit notification to multiple users
-   */
-  emitToUsers(userIds: string[], event: string, data: any) {
-    userIds.forEach((userId) => {
-      this.emitToUser(userId, event, data);
-    });
   }
 
   /**
@@ -304,7 +288,7 @@ export class NotificationsGateway
   emitToProject(projectId: string, event: string, data: any) {
     const projectRoom = `project_${projectId}`;
     this.server.to(projectRoom).emit(event, data);
-    console.log(`📤 Emitted '${event}' to project ${projectId}`);
+    console.log(`Emitted '${event}' to project ${projectId}`);
   }
 
   /**
@@ -324,19 +308,5 @@ export class NotificationsGateway
     // - ONLINE = WebSocket (real-time, in-app)
     // - OFFLINE = FCM (push notification, system tray)
     return isOnline;
-  }
-
-  /**
-   * Get count of online users
-   */
-  getOnlineUsersCount(): number {
-    return this.onlineUsers.size;
-  }
-
-  /**
-   * Get all online user IDs
-   */
-  getOnlineUserIds(): string[] {
-    return Array.from(this.onlineUsers.keys());
   }
 }

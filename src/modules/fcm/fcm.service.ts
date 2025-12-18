@@ -40,7 +40,7 @@ export class FcmService implements OnModuleInit {
         },
   ): Promise<string> {
     try {
-      this.logger.log(`🔔 [FCM] Starting sendNotification`);
+      this.logger.log(`[FCM] Starting sendNotification`);
 
       // If message contains userId, fetch FCM token first
       if ('userId' in message) {
