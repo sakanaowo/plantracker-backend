@@ -22,7 +22,7 @@ export class ProjectMembersController {
   @Post('members/invite')
   async inviteMember(
     @Param('projectId') projectId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: InviteMemberDto,
   ) {
     return this.projectMembersService.inviteMember(projectId, userId, dto);
@@ -31,7 +31,7 @@ export class ProjectMembersController {
   @Get('members')
   async listMembers(
     @Param('projectId') projectId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.projectMembersService.listMembers(projectId, userId);
   }
@@ -40,7 +40,7 @@ export class ProjectMembersController {
   async updateMemberRole(
     @Param('projectId') projectId: string,
     @Param('memberId') memberId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateMemberRoleDto,
   ) {
     return this.projectMembersService.updateMemberRole(
@@ -55,7 +55,7 @@ export class ProjectMembersController {
   async removeMember(
     @Param('projectId') projectId: string,
     @Param('memberId') memberId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.projectMembersService.removeMember(projectId, memberId, userId);
   }
@@ -63,7 +63,7 @@ export class ProjectMembersController {
   @Post('convert-to-team')
   async convertToTeam(
     @Param('projectId') projectId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.projectMembersService.convertToTeam(projectId, userId);
   }
@@ -75,14 +75,14 @@ export class InvitationsController {
   constructor(private readonly projectMembersService: ProjectMembersService) {}
 
   @Get('my')
-  async getMyInvitations(@CurrentUser('sub') userId: string) {
+  async getMyInvitations(@CurrentUser('id') userId: string) {
     return this.projectMembersService.getUserInvitations(userId);
   }
 
   @Post(':invitationId/respond')
   async respondToInvitation(
     @Param('invitationId') invitationId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: { action: 'accept' | 'decline' },
   ) {
     return this.projectMembersService.respondToInvitation(

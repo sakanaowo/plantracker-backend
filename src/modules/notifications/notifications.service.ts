@@ -1254,26 +1254,6 @@ export class NotificationsService {
   }
 
   /**
-   * Send notification to multiple users
-   */
-  async sendNotificationToUsers(
-    userIds: string[],
-    notification: {
-      type: string;
-      title: string;
-      body: string;
-      data?: Record<string, any>;
-      priority?: 'HIGH' | 'NORMAL' | 'LOW';
-    },
-  ): Promise<void> {
-    await Promise.all(
-      userIds.map((userId) =>
-        this.sendNotificationToUser(userId, notification),
-      ),
-    );
-  }
-
-  /**
    * Mark notification as read
    */
   async markAsRead(notificationId: string, userId: string): Promise<void> {

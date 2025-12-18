@@ -139,59 +139,6 @@ export class GoogleCalendarService {
     }
   }
 
-  async createEventInGoogle(eventId: string, userId: string) {
-    const calendar = await this.getCalendarClient(userId);
-    if (!calendar) {
-      this.logger.warn(`No calendar client for user ${userId}`);
-      return;
-    }
-
-    const event = await this.prisma.events.findUnique({
-      where: { id: eventId },
-      include: { participants: true },
-    });
-
-    if (!event) {
-      this.logger.error(`Event not found: ${eventId}`);
-      return;
-    }
-
-    try {
-      const googleEvent = await calendar.events.insert({
-        calendarId: 'primary',
-        requestBody: {
-          summary: event.title,
-          start: {
-            dateTime: this.formatLocalDateTime(event.start_at),
-            timeZone: 'Asia/Ho_Chi_Minh',
-          },
-          end: {
-            dateTime: this.formatLocalDateTime(event.end_at),
-            timeZone: 'Asia/Ho_Chi_Minh',
-          },
-          location: event.location || undefined,
-          description: 'Created from PlanTracker',
-          attendees: event.participants.map((p) => ({ email: p.email })),
-        },
-      });
-
-      await this.prisma.external_event_map.create({
-        data: {
-          event_id: eventId,
-          provider: 'GOOGLE_CALENDAR',
-          provider_event_id: googleEvent.data.id!,
-          html_link: googleEvent.data.htmlLink || null,
-          etag: googleEvent.data.etag || null,
-          last_synced_at: new Date(),
-        },
-      });
-
-      this.logger.log(`Created Google Calendar event: ${googleEvent.data.id}`);
-    } catch (error) {
-      this.logger.error('Error creating Google event:', error);
-    }
-  }
-
   async getIntegrationStatus(userId: string) {
     const integration = await this.prisma.integration_tokens.findFirst({
       where: {
@@ -306,25 +253,6 @@ export class GoogleCalendarService {
 
       return false;
     }
-  }
-
-  /**
-   * Refresh tokens for multiple users
-   * Returns map of userId -> refresh success status
-   */
-  async refreshMultipleTokens(
-    userIds: string[],
-  ): Promise<Map<string, boolean>> {
-    const results = new Map<string, boolean>();
-
-    await Promise.all(
-      userIds.map(async (userId) => {
-        const success = await this.refreshAccessToken(userId);
-        results.set(userId, success);
-      }),
-    );
-
-    return results;
   }
 
   private createOAuth2Client() {

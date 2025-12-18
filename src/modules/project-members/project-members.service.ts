@@ -244,14 +244,12 @@ export class ProjectMembersService {
    */
   async listMembers(projectId: string, userId: string) {
     console.log(
-      `📋 listMembers called - projectId: ${projectId}, userId: ${userId}`,
+      `listMembers called - projectId: ${projectId}, userId: ${userId}`,
     );
 
     // Validate project access
     await this.validateProjectAccess(projectId, userId);
-    console.log(
-      `✅ Access validated for user ${userId} to project ${projectId}`,
-    );
+    console.log(`Access validated for user ${userId} to project ${projectId}`);
 
     const members = await this.prisma.project_members.findMany({
       where: { project_id: projectId },
@@ -272,7 +270,7 @@ export class ProjectMembersService {
     });
 
     console.log(
-      `👥 Found ${members.length} members for project ${projectId}:`,
+      `Found ${members.length} members for project ${projectId}:`,
       members.map((m) => `${m.users.name} (${m.role})`).join(', '),
     );
 
@@ -432,10 +430,6 @@ export class ProjectMembersService {
       where: {
         user_id: userId,
         status: 'PENDING',
-        // Skip expiration check - invitations never expire
-        // expires_at: {
-        //   gt: new Date(), // Not expired
-        // },
       },
       include: {
         projects: {
@@ -496,14 +490,9 @@ export class ProjectMembersService {
       );
     }
 
-    // Skip expiration check (invitations never expire for now)
-    // if (invitation.expires_at < new Date()) {
-    //   throw new BadRequestException('Invitation has expired');
-    // }
-
     const updatedStatus = action === 'accept' ? 'ACCEPTED' : 'DECLINED';
 
-    // ✅ FIX: Wrap all database operations in a transaction for atomicity
+    //Wrap all database operations in a transaction for atomicity
     const result = await this.prisma.$transaction(async (tx) => {
       // If accepted, add user as project member FIRST (before updating status)
       if (action === 'accept') {
@@ -526,9 +515,9 @@ export class ProjectMembersService {
               added_by: invitation.invited_by,
             },
           });
-          console.log('✅ Added user to project_members');
+          console.log('Added user to project_members');
         } else {
-          console.log('ℹ️ User already a member, skipping create');
+          console.log('User already a member, skipping create');
         }
 
         // AUTO-ADD: Add user to workspace memberships if not already a member
@@ -551,7 +540,7 @@ export class ProjectMembersService {
             },
           });
           console.log(
-            `✅ Auto-added user to workspace memberships (workspace: ${workspaceId})`,
+            `Auto-added user to workspace memberships (workspace: ${workspaceId})`,
           );
 
           // Emit workspace_updated event to user
@@ -559,10 +548,10 @@ export class ProjectMembersService {
             workspaceId,
             userId,
           });
-          console.log(`🔔 Emitted workspace_updated to user ${userId}`);
+          console.log(`Emitted workspace_updated to user ${userId}`);
         } else {
           console.log(
-            `ℹ️ User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
+            `User already in workspace memberships (role: ${existingWorkspaceMembership.role})`,
           );
         }
       }
@@ -590,7 +579,7 @@ export class ProjectMembersService {
       await this.activityLogsService.logMemberAdded({
         workspaceId: invitation.projects.workspace_id,
         projectId: invitation.project_id,
-        userId: userId, // The user who accepted (not inviter)
+        userId: invitation.invited_by, // The user who accepted (not inviter)
         memberId: userId,
         memberName: invitation.users_project_invitations_user_idTousers.name,
         role: invitation.role,
@@ -602,9 +591,9 @@ export class ProjectMembersService {
           invitationId: invitationId,
         },
       });
-      console.log('✅ Activity log created for acceptance');
+      console.log('Activity log created for acceptance');
 
-      // ✅ FIX: Send notification to inviter when invitation is accepted
+      // Send notification to inviter when invitation is accepted
       try {
         await this.notificationsService.sendNotificationToUser(
           invitation.invited_by, // userId (inviter)
@@ -623,9 +612,9 @@ export class ProjectMembersService {
             priority: 'HIGH',
           },
         );
-        console.log('✅ Notification sent to inviter about acceptance');
+        console.log('Notification sent to inviter about acceptance');
       } catch (error) {
-        console.error('❌ Failed to send acceptance notification:', error);
+        console.error('Failed to send acceptance notification:', error);
       }
     } else {
       // Log invitation declined
@@ -658,9 +647,9 @@ export class ProjectMembersService {
             priority: 'HIGH',
           },
         );
-        console.log('✅ Notification sent to inviter about decline');
+        console.log('Notification sent to inviter about decline');
       } catch (error) {
-        console.error('❌ Failed to send decline notification:', error);
+        console.error('Failed to send decline notification:', error);
       }
     }
 
@@ -716,7 +705,7 @@ export class ProjectMembersService {
 
     // Log activity
     await this.activityLogsService.logProjectUpdated({
-      workspaceId: project.workspace_id, // ✅ Add workspace
+      workspaceId: project.workspace_id,
       projectId,
       userId,
       projectName: project.name,
@@ -749,8 +738,6 @@ export class ProjectMembersService {
     });
 
     if (!member) {
-      // 🔧 AUTO-FIX: Check if user is workspace owner (missing project_member record)
-      // This handles legacy projects created before we added automatic project_member creation
       const project = await this.prisma.projects.findUnique({
         where: { id: projectId },
         include: {
@@ -759,11 +746,8 @@ export class ProjectMembersService {
           },
         },
       });
-
+      // FIX: Auto-add workspace owner as project OWNER if not already a member
       if (project?.workspaces?.owner_id === userId) {
-        console.log(
-          '🔧 AUTO-FIX: Workspace owner missing project_member record, creating with OWNER role',
-        );
         member = await this.prisma.project_members.create({
           data: {
             project_id: projectId,
@@ -772,9 +756,6 @@ export class ProjectMembersService {
             added_by: userId,
           },
         });
-        console.log(
-          '✅ Project_member record auto-created for workspace owner',
-        );
       } else {
         throw new ForbiddenException('You are not a member of this project');
       }

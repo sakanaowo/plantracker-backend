@@ -288,7 +288,7 @@ export class NotificationsGateway
   emitToProject(projectId: string, event: string, data: any) {
     const projectRoom = `project_${projectId}`;
     this.server.to(projectRoom).emit(event, data);
-    console.log(`Emitted '${event}' to project ${projectId}`);
+    console.log(`📤 Emitted '${event}' to project ${projectId}`);
   }
 
   /**

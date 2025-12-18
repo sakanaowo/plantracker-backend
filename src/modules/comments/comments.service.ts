@@ -269,51 +269,6 @@ export class CommentsService {
   }
 
   /**
-   * Helper: Parse @mentions from comment text
-   * Supports format: @[userId]
-   */
-  private parseMentions(text: string): string[] {
-    const mentionRegex = /@\[([a-f0-9-]{36})\]/g;
-    const matches = [...text.matchAll(mentionRegex)];
-    return matches.map((m) => m[1]);
-  }
-
-  /**
-   * Helper: Send notifications to mentioned users
-   */
-  // private async notifyMentionedUsers(params: {
-  //   taskId: string;
-  //   taskTitle: string;
-  //   commentBody: string;
-  //   mentionedUserIds: string[];
-  //   commentAuthorId: string;
-  // }) {
-  //   // Get comment author name
-  //   const author = await this.prisma.users.findUnique({
-  //     where: { id: params.commentAuthorId },
-  //     select: { name: true },
-  //   });
-
-  //   const authorName = author?.name ?? 'Someone';
-
-  //   // Send notification to each mentioned user (except author)
-  //   for (const userId of params.mentionedUserIds) {
-  //     if (userId === params.commentAuthorId) continue; // Don't notify self
-
-  //     // TODO: Implement mention notification type in NotificationsService
-  //     // For now, we skip this or use a generic notification
-  //     // await this.notificationsService.sendMentionNotification({
-  //     //   userId,
-  //     //   taskId: params.taskId,
-  //     //   taskTitle: params.taskTitle,
-  //     //   mentionedBy: params.commentAuthorId,
-  //     //   mentionedByName: authorName,
-  //     //   commentBody: params.commentBody.substring(0, 100),
-  //     // });
-  //   }
-  // }
-
-  /**
    * Helper: Validate task exists and user has access
    */
   private async validateTaskAccess(taskId: string, userId: string) {

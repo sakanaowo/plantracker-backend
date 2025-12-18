@@ -887,62 +887,6 @@ export class ActivityLogsService {
   }
 
   /**
-   * Get activity logs with pagination
-   */
-  async getActivityFeedWithPagination(params: {
-    workspaceId?: string;
-    projectId?: string;
-    taskId?: string;
-    userId?: string;
-    limit?: number;
-    cursor?: string; // activity_log id
-  }) {
-    const limit = params.limit ?? 50;
-
-    const where: Prisma.activity_logsWhereInput = {};
-    if (params.workspaceId) where.workspace_id = params.workspaceId;
-    if (params.projectId) where.project_id = params.projectId;
-    if (params.taskId) where.task_id = params.taskId;
-    if (params.userId) where.user_id = params.userId;
-
-    if (params.cursor) {
-      const cursorLog = await this.prisma.activity_logs.findUnique({
-        where: { id: params.cursor },
-      });
-      if (cursorLog) {
-        where.created_at = { lt: cursorLog.created_at };
-      }
-    }
-
-    const logs = await this.prisma.activity_logs.findMany({
-      where,
-      include: {
-        users: {
-          select: {
-            id: true,
-            name: true,
-            avatar_url: true,
-          },
-        },
-      },
-      orderBy: { created_at: 'desc' },
-      take: limit + 1,
-    });
-
-    const hasMore = logs.length > limit;
-    const data = hasMore ? logs.slice(0, -1) : logs;
-    const nextCursor = hasMore ? data[data.length - 1].id : null;
-
-    return {
-      data,
-      pagination: {
-        nextCursor,
-        hasMore,
-      },
-    };
-  }
-
-  /**
    * Log when an event is created in a project
    */
   async logEventCreated(params: {
