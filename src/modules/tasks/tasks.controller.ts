@@ -142,39 +142,6 @@ export class TasksController {
     return this.svc.softDelete(id, userId);
   }
 
-  // ==================== COMMENTS ====================
-
-  @Get(':taskId/comments')
-  getComments(@Param('taskId', new ParseUUIDPipe()) taskId: string) {
-    return this.svc.getComments(taskId);
-  }
-
-  @Post(':taskId/comments')
-  createComment(
-    @Param('taskId', new ParseUUIDPipe()) taskId: string,
-    @Body() dto: CreateCommentDto,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.svc.createComment(taskId, userId, dto.body);
-  }
-
-  @Patch('comments/:commentId')
-  updateComment(
-    @Param('commentId', new ParseUUIDPipe()) commentId: string,
-    @Body() dto: UpdateCommentDto,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.svc.updateComment(commentId, userId, dto.body);
-  }
-
-  @Delete('comments/:commentId')
-  deleteComment(
-    @Param('commentId', new ParseUUIDPipe()) commentId: string,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.svc.deleteComment(commentId, userId);
-  }
-
   // ==================== ASSIGNEES ====================
 
   @Get(':taskId/assignees')
@@ -198,23 +165,6 @@ export class TasksController {
     @CurrentUser('id') userId: string,
   ) {
     return this.svc.unassignUser(taskId, assigneeUserId, userId);
-  }
-
-  @Delete(':taskId/assignees')
-  unassignAll(
-    @Param('taskId', new ParseUUIDPipe()) taskId: string,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.svc.unassignAll(taskId, userId);
-  }
-
-  // ==================== STATUS SYNC ====================
-
-  @Post('sync-status/:projectId')
-  syncStatus(
-    @Param('projectId', new ParseUUIDPipe()) projectId: string,
-  ): Promise<{ updated: number; message: string }> {
-    return this.svc.syncTaskStatusByBoard(projectId);
   }
 
   // ==================== CALENDAR SYNC ====================
